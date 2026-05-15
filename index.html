@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Cozy Pixel Cafe</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -81,6 +82,27 @@
             image-rendering: pixelated;
         }
 
+        /* Floating Chat Icon */
+        #floating-chat-btn {
+            background: var(--accent);
+            color: #2c272e;
+            border: 4px solid #b67d65;
+            border-radius: 50%;
+            width: 64px;
+            height: 64px;
+            font-size: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 0 #8c5d4b;
+            transition: transform 0.1s;
+            z-index: 40;
+        }
+        #floating-chat-btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 0 0 #8c5d4b;
+        }
+
         /* Toast */
         #toast {
             transition: opacity 0.3s, transform 0.3s;
@@ -102,12 +124,22 @@
             <h1 class="text-5xl md:text-6xl text-center text-[#d89f87] mb-2 drop-shadow-md">
                 Cozy Cafe
             </h1>
-            <p class="text-[#a89f91] mb-8 text-center text-xl">A little pixel lobby to chat with friends.</p>
+            <p class="text-[#a89f91] mb-6 text-center text-xl">A little pixel lobby to chat with friends.</p>
             
             <div id="loading-indicator" class="text-[#d89f87] animate-pulse text-2xl mb-4">Brewing connection...</div>
 
-            <div id="menu-controls" class="hidden flex-col items-center space-y-6 w-full">
-                <button onclick="createRoom()" class="cafe-btn w-full py-3">Open a New Table</button>
+            <div id="menu-controls" class="hidden flex-col items-center space-y-4 w-full">
+                
+                <!-- Character Preview -->
+                <div class="flex flex-col items-center justify-center bg-[#2c272e] border-4 border-[#6a5a65] rounded-xl p-3 w-full">
+                    <canvas id="previewCanvas" width="64" height="64" class="block" style="image-rendering: pixelated;"></canvas>
+                    <div id="color-picker" class="flex gap-2 mt-2 flex-wrap justify-center">
+                        <!-- Colors inserted via JS -->
+                    </div>
+                </div>
+
+                <input type="text" id="username-input" placeholder="ENTER USERNAME" maxlength="12" class="cafe-input w-full p-3 text-center text-2xl uppercase">
+                <button id="btn-create-room" onclick="createRoom()" class="cafe-btn w-full py-3">Open a New Table</button>
                 
                 <div class="flex items-center w-full space-x-4 py-2">
                     <div class="h-1 bg-[#6a5a65] flex-1 rounded"></div>
@@ -117,7 +149,7 @@
 
                 <div class="w-full flex flex-col space-y-3">
                     <input type="text" id="join-code" placeholder="ENTER 4-LETTER CODE" maxlength="4" class="cafe-input w-full p-3 text-center text-2xl uppercase">
-                    <button onclick="joinRoomFromInput()" class="cafe-btn w-full py-3 bg-[#8fb3a0] border-[#6b8c7a] shadow-[0_4px_0_#506e5e]">Join Friends</button>
+                    <button id="btn-join-room" onclick="joinRoomFromInput()" class="cafe-btn w-full py-3 bg-[#8fb3a0] border-[#6b8c7a] shadow-[0_4px_0_#506e5e]">Join Friends</button>
                 </div>
             </div>
         </div>
@@ -143,32 +175,32 @@
         <!-- Desktop Leave Button -->
         <button id="desktop-leave" onclick="leaveRoom()" class="hidden md:block absolute top-4 right-40 pointer-events-auto cafe-btn bg-[#c47272] border-[#9a5454] px-4 py-2 text-xl" style="box-shadow: 0 4px 0 #7a3c3c;">Leave</button>
         
-        <!-- Chat Bar (Bottom) -->
-        <div id="chat-bar" class="mt-auto w-full p-4 flex flex-col md:flex-row gap-4 pointer-events-auto items-center">
-            <!-- Mobile D-Pad (Only visible on small screens) -->
-            <div class="md:hidden flex gap-2 mb-2 w-full justify-center">
-                <div class="grid grid-cols-3 grid-rows-2 gap-2 w-48 opacity-80">
-                    <div id="btn-left" class="bg-white/20 rounded-lg p-2 text-center active:bg-white/40" data-key="ArrowLeft">◀</div>
-                    <div class="flex flex-col gap-2">
-                        <div id="btn-up" class="bg-white/20 rounded-lg p-2 text-center active:bg-white/40" data-key="ArrowUp">▲</div>
-                        <div id="btn-down" class="bg-white/20 rounded-lg p-2 text-center active:bg-white/40" data-key="ArrowDown">▼</div>
-                    </div>
-                    <div id="btn-right" class="bg-white/20 rounded-lg p-2 text-center active:bg-white/40" data-key="ArrowRight">▶</div>
-                </div>
+        <!-- Floating Controls (Mobile & Desktop) -->
+        <div id="floating-controls" class="absolute bottom-4 left-4 right-4 pointer-events-none flex flex-col items-end justify-end gap-3" style="z-index:40;">
+            
+            <!-- Chat Form (Floating) -->
+            <div id="chat-bar" class="hidden pointer-events-auto bg-[#4a3e47]/90 border-4 border-[#6a5a65] p-2 rounded-xl shadow-lg w-full max-w-sm mb-2" style="backdrop-filter: blur(4px);">
+                <form onsubmit="handleChatSubmit(event)" class="flex w-full gap-2">
+                    <input type="text" id="chat-input" placeholder="Say something nice..." maxlength="50" autocomplete="off" class="cafe-input flex-1 p-2 text-xl" onfocus="window.isTyping = true" onblur="window.isTyping = false">
+                    <button type="submit" class="cafe-btn px-4 py-1 text-xl">Chat</button>
+                </form>
             </div>
 
-            <!-- Input Field -->
-            <form onsubmit="handleChatSubmit(event)" class="flex w-full max-w-4xl mx-auto gap-2">
-                <input type="text" id="chat-input" placeholder="Say something nice..." maxlength="50" autocomplete="off" class="cafe-input flex-1 p-3 text-xl" onfocus="window.isTyping = true" onblur="window.isTyping = false">
-                <button type="submit" class="cafe-btn px-6 py-2 text-xl">Chat</button>
-                <button type="button" onclick="leaveRoom()" class="md:hidden cafe-btn bg-[#c47272] border-[#9a5454] px-4 py-2 text-xl" style="box-shadow: 0 4px 0 #7a3c3c;">Leave</button>
-            </form>
+            <div class="flex items-end justify-between w-full">
+                <div id="joystick-zone" class="pointer-events-auto md:hidden" style="width: 120px; height: 120px; position: relative;"></div>
+                <div class="flex-1"></div>
+                <button id="floating-chat-btn" class="pointer-events-auto ml-auto" onclick="toggleChat()">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="#2c272e" xmlns="http://www.w3.org/2000/svg" style="image-rendering: pixelated;">
+                        <path d="M2 4h20v12H10l-4 4v-4H2V4z"/>
+                    </svg>
+                </button>
+            </div>
         </div>
     </div>
 
     <!-- Canvas -->
     <div id="game-container" class="absolute inset-0 z-10 flex items-center justify-center">
-        <canvas id="gameCanvas" width="800" height="600" class="max-w-full max-h-full w-full h-full object-cover"></canvas>
+        <canvas id="gameCanvas" width="800" height="600" class="max-w-full max-h-full w-full h-full object-contain"></canvas>
     </div>
 
     <script type="module">
@@ -200,14 +232,20 @@
 
         // Pastel cozy colors for players
         const PLAYER_COLORS = ['#ffb3ba', '#ffdfba', '#ffffba', '#baffc9', '#bae1ff', '#e0baff', '#ffbaf2'];
+        let selectedColor = PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
+        let previewIdleOffset = Math.random() * Math.PI * 2;
+        let previewLoopId = null;
         
         let localPlayer = {
             x: 400,
             y: 400,
-            color: PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)],
+            color: selectedColor,
             msg: "",
             msgTime: 0,
-            lastSeen: 0
+            lastSeen: 0,
+            username: "",
+            vx: 0,
+            vy: 0
         };
 
         // Canvas & Engine variables
@@ -223,6 +261,10 @@
         let gameLoopId = null;
         let networkSyncId = null;
         window.isTyping = false; // Prevent WASD movement while typing
+        
+        let joystickVector = { x: 0, y: 0 };
+        let nippleManager = null;
+        const clientState = {}; // Interpolation state per UID
 
         async function initAuth() {
             try {
@@ -244,12 +286,14 @@
                 document.getElementById('menu-controls').classList.remove('hidden');
                 document.getElementById('menu-controls').classList.add('flex');
                 
+                initColorPicker();
+
                 // Check if opened via share link
                 const urlParams = new URLSearchParams(window.location.search);
                 const roomFromUrl = urlParams.get('room');
                 if (roomFromUrl && roomFromUrl.length === 4) {
                     document.getElementById('join-code').value = roomFromUrl.toUpperCase();
-                    window.joinRoomFromInput();
+                    // Optional: we can't join automatically here because they need a username first.
                 }
             }
         });
@@ -268,15 +312,124 @@
             return doc(db, 'artifacts', window.appId, 'public', 'data', 'cafe_rooms', roomCode);
         }
 
+        function initColorPicker() {
+            const container = document.getElementById('color-picker');
+            container.innerHTML = '';
+            PLAYER_COLORS.forEach(color => {
+                const btn = document.createElement('button');
+                btn.className = `w-8 h-8 rounded-md border-4 ${color === selectedColor ? 'border-white scale-110' : 'border-[#6a5a65]'} transition-transform`;
+                btn.style.backgroundColor = color;
+                btn.onclick = () => {
+                    selectedColor = color;
+                    localPlayer.color = color;
+                    Array.from(container.children).forEach(c => {
+                        c.classList.remove('border-white', 'scale-110');
+                        c.classList.add('border-[#6a5a65]');
+                    });
+                    btn.classList.add('border-white', 'scale-110');
+                    btn.classList.remove('border-[#6a5a65]');
+                };
+                container.appendChild(btn);
+            });
+            startPreviewLoop();
+        }
+
+        function startPreviewLoop() {
+            const pCanvas = document.getElementById('previewCanvas');
+            if (!pCanvas) return;
+            const pCtx = pCanvas.getContext('2d');
+            
+            function loop() {
+                if (currentRoom) {
+                    cancelAnimationFrame(previewLoopId);
+                    return; 
+                }
+                
+                pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+                
+                const now = Date.now();
+                const idleTime = now * 0.0025 + previewIdleOffset;
+                const bouncePhase = Math.abs(Math.sin(idleTime));
+                
+                const idleBounceY = -Math.pow(bouncePhase, 2) * 5;
+                let scaleX = 1;
+                let scaleY = 1;
+                
+                if (bouncePhase < 0.2) {
+                    scaleX = 1 + (0.2 - bouncePhase) * 0.8;
+                    scaleY = 1 - (0.2 - bouncePhase) * 0.8;
+                } else {
+                    scaleX = 1 - (bouncePhase - 0.2) * 0.15;
+                    scaleY = 1 + (bouncePhase - 0.2) * 0.15;
+                }
+
+                const drawX = 16;
+                const drawY = 16;
+                const bounceY = idleBounceY;
+                const color = selectedColor;
+
+                pCtx.save();
+                pCtx.fillStyle = 'rgba(0,0,0,0.2)';
+                pCtx.beginPath();
+                pCtx.ellipse(drawX + PLAYER_SIZE/2, drawY + PLAYER_SIZE, (PLAYER_SIZE/2) * scaleX, 8 * (2 - scaleY), 0, 0, Math.PI*2);
+                pCtx.fill();
+
+                pCtx.translate(drawX + PLAYER_SIZE/2, drawY + PLAYER_SIZE + bounceY);
+                pCtx.scale(scaleX, scaleY);
+                pCtx.translate(-(drawX + PLAYER_SIZE/2), -(drawY + PLAYER_SIZE + bounceY));
+
+                const bodyY = drawY + bounceY;
+                pCtx.fillStyle = color;
+                if(pCtx.roundRect) {
+                    pCtx.beginPath();
+                    pCtx.roundRect(drawX, bodyY, PLAYER_SIZE, PLAYER_SIZE, 6);
+                    pCtx.fill();
+                } else {
+                    pCtx.fillRect(drawX, bodyY, PLAYER_SIZE, PLAYER_SIZE);
+                }
+                
+                pCtx.fillStyle = '#2c272e';
+                pCtx.fillRect(drawX + 8, bodyY + 12, 4, 6);
+                pCtx.fillRect(drawX + PLAYER_SIZE - 12, bodyY + 12, 4, 6);
+                
+                pCtx.fillStyle = 'rgba(255,100,100,0.4)';
+                pCtx.fillRect(drawX + 4, bodyY + 18, 6, 4);
+                pCtx.fillRect(drawX + PLAYER_SIZE - 10, bodyY + 18, 6, 4);
+
+                pCtx.restore();
+                previewLoopId = requestAnimationFrame(loop);
+            }
+            loop();
+        }
+
+        function getUsername() {
+            const val = document.getElementById('username-input').value.trim();
+            if (!val) {
+                showToast("Please enter a username!");
+                return null;
+            }
+            return val;
+        }
+
         window.createRoom = async () => {
             if (!currentUser) return;
+            const username = getUsername();
+            if (!username) return;
+            
+            const btn = document.getElementById('btn-create-room');
+            btn.disabled = true;
+            const originalText = btn.innerText;
+            btn.innerText = "Opening Table...";
+            btn.classList.add('opacity-70', 'cursor-not-allowed');
+
             const code = generateRoomCode();
             const roomRef = getRoomRef(code);
             
-            // Spawn near the entrance (bottom center)
+            // Spawn at the center
             localPlayer.x = CANVAS_WIDTH / 2 - PLAYER_SIZE / 2;
-            localPlayer.y = CANVAS_HEIGHT - 100;
+            localPlayer.y = CANVAS_HEIGHT / 2 - PLAYER_SIZE / 2;
             localPlayer.lastSeen = Date.now();
+            localPlayer.username = username;
 
             const initialData = {
                 createdAt: Date.now(),
@@ -287,41 +440,59 @@
 
             try {
                 await setDoc(roomRef, initialData);
-                joinRoom(code);
+                await joinRoom(code);
             } catch (e) {
                 console.error("Error creating room:", e);
                 showToast("Error opening table.");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = originalText;
+                btn.classList.remove('opacity-70', 'cursor-not-allowed');
             }
         };
 
-        window.joinRoomFromInput = () => {
+        window.joinRoomFromInput = async () => {
             const code = document.getElementById('join-code').value.toUpperCase().trim();
             if (code.length === 4) {
-                joinRoom(code);
+                const btn = document.getElementById('btn-join-room');
+                btn.disabled = true;
+                const originalText = btn.innerText;
+                btn.innerText = "Joining...";
+                btn.classList.add('opacity-70', 'cursor-not-allowed');
+
+                await joinRoom(code);
+
+                btn.disabled = false;
+                btn.innerText = originalText;
+                btn.classList.remove('opacity-70', 'cursor-not-allowed');
             } else {
                 showToast("Enter a valid 4-letter code.");
             }
         };
 
         async function joinRoom(code) {
-            if (!currentUser) return;
+            if (!currentUser) return false;
+            const username = getUsername();
+            if (!username) return false;
+            
             const roomRef = getRoomRef(code);
 
             try {
                 const roomSnap = await getDoc(roomRef);
                 if (!roomSnap.exists()) {
                     showToast("Room not found!");
-                    return;
+                    return false;
                 }
 
                 currentRoom = code;
                 document.getElementById('display-room-code').innerText = code;
                 
-                // Reset local player properties
+                // Reset local player properties to spawn at the center
                 localPlayer.x = CANVAS_WIDTH / 2 - PLAYER_SIZE / 2 + (Math.random() * 40 - 20);
-                localPlayer.y = CANVAS_HEIGHT - 100 + (Math.random() * 20 - 10);
+                localPlayer.y = CANVAS_HEIGHT / 2 - PLAYER_SIZE / 2 + (Math.random() * 20 - 10);
                 localPlayer.msg = "";
                 localPlayer.lastSeen = Date.now();
+                localPlayer.username = username;
                 
                 await updateDoc(roomRef, {
                     [`players.${currentUser.uid}`]: localPlayer
@@ -347,6 +518,7 @@
 
                 startGameLoop();
                 startNetworkSync();
+                initJoystick();
                 showToast(`Joined table ${code}!`);
 
                 const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?room=' + code;
@@ -354,11 +526,42 @@
 
                 // Focus canvas so we can move immediately
                 canvas.focus();
+                
+                return true;
 
             } catch (e) {
                 console.error("Error joining:", e);
                 showToast("Failed to join room.");
+                return false;
             }
+        }
+
+        function initJoystick() {
+            if (nippleManager) return;
+            const zone = document.getElementById('joystick-zone');
+            if (!zone) return;
+            
+            // Only init if mobile
+            if (window.innerWidth >= 768) return; 
+
+            nippleManager = nipplejs.create({
+                zone: zone,
+                mode: 'static',
+                position: { left: '50%', top: '50%' },
+                color: 'white',
+                size: 100
+            });
+
+            nippleManager.on('move', (evt, data) => {
+                if (data.vector) {
+                    joystickVector.x = data.vector.x;
+                    joystickVector.y = -data.vector.y; // Invert Y
+                }
+            });
+            nippleManager.on('end', () => {
+                joystickVector.x = 0;
+                joystickVector.y = 0;
+            });
         }
 
         window.leaveRoom = () => {
@@ -439,6 +642,18 @@
             canvas.focus(); // Return focus to canvas for movement
         };
 
+        window.toggleChat = () => {
+            const chatBar = document.getElementById('chat-bar');
+            if (chatBar.classList.contains('hidden')) {
+                chatBar.classList.remove('hidden');
+                chatBar.classList.add('flex');
+                document.getElementById('chat-input').focus();
+            } else {
+                chatBar.classList.add('hidden');
+                chatBar.classList.remove('flex');
+            }
+        };
+
         // Keyboard Controls
         window.addEventListener('keydown', (e) => {
             if (window.isTyping) return; // Ignore movement keys if typing
@@ -451,7 +666,12 @@
             // Quick focus chat with Enter
             if (e.key === 'Enter' && currentRoom) {
                 e.preventDefault();
-                document.getElementById('chat-input').focus();
+                const chatBar = document.getElementById('chat-bar');
+                if (chatBar.classList.contains('hidden')) {
+                    window.toggleChat();
+                } else {
+                    document.getElementById('chat-input').focus();
+                }
             }
         });
 
@@ -460,20 +680,6 @@
                 keys[e.key] = false;
                 keys[e.key.toLowerCase()] = false;
             }
-        });
-
-        // Touch Controls (Mobile)
-        const dpadBtns = document.querySelectorAll('[data-key]');
-        dpadBtns.forEach(btn => {
-            const key = btn.getAttribute('data-key');
-            const press = (e) => { e.preventDefault(); keys[key] = true; btn.classList.add('bg-white/40'); };
-            const release = (e) => { e.preventDefault(); keys[key] = false; btn.classList.remove('bg-white/40'); };
-
-            btn.addEventListener('touchstart', press, {passive: false});
-            btn.addEventListener('touchend', release, {passive: false});
-            btn.addEventListener('mousedown', press);
-            btn.addEventListener('mouseup', release);
-            btn.addEventListener('mouseleave', release);
         });
 
         function updatePhysics() {
@@ -487,13 +693,21 @@
             if (keys['ArrowLeft'] || keys['a']) dx -= SPEED;
             if (keys['ArrowRight'] || keys['d']) dx += SPEED;
 
-            if (dx !== 0 && dy !== 0) {
-                dx *= 0.707;
-                dy *= 0.707;
+            // Apply joystick input if no keyboard input
+            if (dx === 0 && dy === 0) {
+                dx = joystickVector.x * SPEED;
+                dy = joystickVector.y * SPEED;
+            } else {
+                if (dx !== 0 && dy !== 0) {
+                    dx *= 0.707;
+                    dy *= 0.707;
+                }
             }
 
             localPlayer.x += dx;
             localPlayer.y += dy;
+            localPlayer.vx = dx;
+            localPlayer.vy = dy;
 
             // Simple cafe boundaries (keep them on the rug/floor area mostly)
             // Left/Right bounds
@@ -578,9 +792,9 @@
             const bubbleWidth = textWidth + padding * 2;
             const bubbleHeight = 32;
             
-            // Position bubble above the player, centered
+            // Position bubble above the player and username, centered
             const bubbleX = x + (PLAYER_SIZE/2) - (bubbleWidth/2);
-            const bubbleY = y - bubbleHeight - 15;
+            const bubbleY = y - bubbleHeight - 40;
 
             // Shadow
             ctx.fillStyle = 'rgba(0,0,0,0.15)';
@@ -642,35 +856,103 @@
                     if (now - p.lastSeen > 15000) continue;
 
                     const isMe = (uid === currentUser.uid);
-                    // Smooth local rendering to avoid input lag feel
-                    const drawX = isMe ? localPlayer.x : p.x;
-                    const drawY = isMe ? localPlayer.y : p.y;
-                    const color = isMe ? localPlayer.color : (p.color || '#ffb3ba');
+                    
+                    // Initialize client state for interpolation
+                    if (!clientState[uid]) clientState[uid] = { currentX: p.x, currentY: p.y, animOffset: 0, idleOffset: Math.random() * Math.PI * 2 };
+                    const cs = clientState[uid];
 
-                    // Player Shadow
+                    let drawX, drawY, isMoving;
+
+                    if (isMe) {
+                        drawX = localPlayer.x;
+                        drawY = localPlayer.y;
+                        isMoving = Math.abs(localPlayer.vx) > 0.1 || Math.abs(localPlayer.vy) > 0.1;
+                    } else {
+                        // Smooth local rendering to avoid input lag feel (LERP)
+                        cs.currentX += (p.x - cs.currentX) * 0.2;
+                        cs.currentY += (p.y - cs.currentY) * 0.2;
+                        drawX = cs.currentX;
+                        drawY = cs.currentY;
+                        isMoving = Math.abs(p.x - cs.currentX) > 1 || Math.abs(p.y - cs.currentY) > 1;
+                    }
+
+                    // Update animation offset
+                    if (isMoving) cs.animOffset += 0.2;
+                    else cs.animOffset = 0;
+
+                    let scaleX = 1;
+                    let scaleY = 1;
+                    let idleBounceY = 0;
+
+                    if (!isMoving) {
+                        const idleTime = now * 0.0025 + cs.idleOffset;
+                        const bouncePhase = Math.abs(Math.sin(idleTime));
+                        
+                        idleBounceY = -Math.pow(bouncePhase, 2) * 5;
+                        
+                        if (bouncePhase < 0.2) {
+                            // Squash hard when hitting the ground
+                            scaleX = 1 + (0.2 - bouncePhase) * 0.8;
+                            scaleY = 1 - (0.2 - bouncePhase) * 0.8;
+                        } else {
+                            // Stretch gently while in the air
+                            scaleX = 1 - (bouncePhase - 0.2) * 0.15;
+                            scaleY = 1 + (bouncePhase - 0.2) * 0.15;
+                        }
+                    }
+
+                    const wobbleAngle = isMoving ? Math.sin(cs.animOffset) * 0.15 : 0;
+                    const bounceY = isMoving ? -Math.abs(Math.sin(cs.animOffset)) * 4 : idleBounceY;
+
+                    const color = isMe ? localPlayer.color : (p.color || '#ffb3ba');
+                    const username = isMe ? localPlayer.username : (p.username || 'Guest');
+
+                    // Draw Username above player
+                    ctx.font = '16px "VT323", monospace';
+                    const nameWidth = ctx.measureText(username).width;
+                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                    ctx.fillRect(drawX + PLAYER_SIZE/2 - nameWidth/2 - 4, drawY + bounceY - 24, nameWidth + 8, 20);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(username, drawX + PLAYER_SIZE/2, drawY + bounceY - 10);
+                    ctx.textAlign = 'left';
+
+                    // Save context for rotation/bouncing of character
+                    ctx.save();
+                    
+                    // Player Shadow (drawn on the floor, unaffected by bounce, but affected by wobble slightly? Better to keep it completely flat)
                     ctx.fillStyle = 'rgba(0,0,0,0.2)';
                     ctx.beginPath();
-                    ctx.ellipse(drawX + PLAYER_SIZE/2, drawY + PLAYER_SIZE, PLAYER_SIZE/2, 8, 0, 0, Math.PI*2);
+                    // Shadow scales with the bounce (squash = wider shadow, stretch = narrower shadow)
+                    ctx.ellipse(drawX + PLAYER_SIZE/2, drawY + PLAYER_SIZE, (PLAYER_SIZE/2) * scaleX, 8 * (2 - scaleY), 0, 0, Math.PI*2);
                     ctx.fill();
+
+                    // Apply animation transforms to the body (Pivot at feet)
+                    ctx.translate(drawX + PLAYER_SIZE/2, drawY + PLAYER_SIZE + bounceY);
+                    ctx.rotate(wobbleAngle);
+                    ctx.scale(scaleX, scaleY);
+                    ctx.translate(-(drawX + PLAYER_SIZE/2), -(drawY + PLAYER_SIZE + bounceY));
+
+                    const bodyY = drawY + bounceY;
 
                     // Player Body
                     ctx.fillStyle = color;
                     if(ctx.roundRect) {
                         ctx.beginPath();
-                        ctx.roundRect(drawX, drawY, PLAYER_SIZE, PLAYER_SIZE, 6);
+                        ctx.roundRect(drawX, bodyY, PLAYER_SIZE, PLAYER_SIZE, 6);
                         ctx.fill();
                     } else {
-                        ctx.fillRect(drawX, drawY, PLAYER_SIZE, PLAYER_SIZE);
+                        ctx.fillRect(drawX, bodyY, PLAYER_SIZE, PLAYER_SIZE);
                     }
                     
                     // Cute face (eyes and blush)
                     ctx.fillStyle = '#2c272e'; // Eyes
-                    ctx.fillRect(drawX + 8, drawY + 12, 4, 6);
-                    ctx.fillRect(drawX + PLAYER_SIZE - 12, drawY + 12, 4, 6);
+                    ctx.fillRect(drawX + 8, bodyY + 12, 4, 6);
+                    ctx.fillRect(drawX + PLAYER_SIZE - 12, bodyY + 12, 4, 6);
                     
                     ctx.fillStyle = 'rgba(255,100,100,0.4)'; // Blush
-                    ctx.fillRect(drawX + 4, drawY + 18, 6, 4);
-                    ctx.fillRect(drawX + PLAYER_SIZE - 10, drawY + 18, 6, 4);
+                    ctx.fillRect(drawX + 4, bodyY + 18, 6, 4);
+                    ctx.fillRect(drawX + PLAYER_SIZE - 10, bodyY + 18, 6, 4);
 
                     // Highlight self outline
                     if (isMe) {
@@ -678,19 +960,21 @@
                         ctx.lineWidth = 2;
                         if(ctx.roundRect) {
                             ctx.beginPath();
-                            ctx.roundRect(drawX - 2, drawY - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4, 8);
+                            ctx.roundRect(drawX - 2, bodyY - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4, 8);
                             ctx.stroke();
                         } else {
-                            ctx.strokeRect(drawX - 2, drawY - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4);
+                            ctx.strokeRect(drawX - 2, bodyY - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4);
                         }
                     }
+
+                    ctx.restore();
 
                     // Draw Chat Bubble (Visible for 6 seconds)
                     const msg = isMe ? localPlayer.msg : p.msg;
                     const msgTime = isMe ? localPlayer.msgTime : p.msgTime;
                     
                     if (msg && msgTime && (now - msgTime < 6000)) {
-                        drawChatBubble(drawX, drawY, msg);
+                        drawChatBubble(drawX, drawY + bounceY, msg);
                     }
                 }
             }
@@ -732,7 +1016,8 @@
                 updateDoc(roomRef, {
                     [`players.${currentUser.uid}.x`]: localPlayer.x,
                     [`players.${currentUser.uid}.y`]: localPlayer.y,
-                    [`players.${currentUser.uid}.lastSeen`]: localPlayer.lastSeen
+                    [`players.${currentUser.uid}.lastSeen`]: localPlayer.lastSeen,
+                    [`players.${currentUser.uid}.username`]: localPlayer.username
                 }).catch(e => {
                     // Suppress harmless transient network errors in console
                 });
