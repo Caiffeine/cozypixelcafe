@@ -135,6 +135,15 @@
         Notification
     </div>
 
+    <!-- Error Dialog Overlay -->
+    <div id="dialog-overlay" class="hidden absolute inset-0 bg-black/60 z-50 items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-[#4a3e47] border-4 border-[#6a5a65] p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center">
+            <h2 class="text-3xl text-[#d89f87] mb-4">Table Not Found</h2>
+            <p id="dialog-msg" class="text-xl text-[#a89f91] mb-6">The room code is invalid or the table has been closed.</p>
+            <button onclick="closeDialog()" class="cafe-btn px-6 py-2 text-xl w-full">Okay</button>
+        </div>
+    </div>
+
     <!-- Main Menu UI -->
     <div id="menu-ui" class="absolute inset-0 flex flex-col items-center justify-center z-40 bg-[#2c272e]/90 backdrop-blur-sm overflow-y-auto py-4">
         <div class="bg-[#4a3e47] p-6 md:p-8 rounded-2xl border-4 border-[#6a5a65] max-w-md w-full mx-4 shadow-2xl flex flex-col items-center my-auto">
@@ -183,10 +192,17 @@
             </div>
             
             <div class="flex flex-col gap-2 items-end">
-                <!-- Online Counter -->
-                <div class="bg-[#4a3e47]/90 border-4 border-[#6a5a65] p-2 md:p-3 rounded-xl shadow-lg text-base md:text-xl flex items-center gap-2">
-                    <div class="w-2 h-2 md:w-3 md:h-3 bg-green-400 rounded-full animate-pulse"></div>
-                    <span id="online-count" class="text-white">1 Online</span>
+                <!-- Status & Ping -->
+                <div class="bg-[#4a3e47]/90 border-4 border-[#6a5a65] p-2 md:p-3 rounded-xl shadow-lg flex flex-col items-end gap-1">
+                    <div class="text-base md:text-xl flex items-center gap-2">
+                        <div id="conn-indicator" class="w-2 h-2 md:w-3 md:h-3 bg-yellow-400 rounded-full animate-pulse"></div>
+                        <span id="conn-status" class="text-white">Connecting...</span>
+                    </div>
+                    <div class="text-xs md:text-sm text-[#a89f91] flex gap-3">
+                        <span id="online-count">1 Online</span>
+                        <span>|</span>
+                        <span id="ping-value">Ping: -- ms</span>
+                    </div>
                 </div>
                 <!-- Leave Button -->
                 <button id="leave-room-btn" onclick="leaveRoom()" class="pointer-events-auto cafe-btn bg-[#c47272] border-[#9a5454] px-3 py-1 md:px-4 md:py-2 text-sm md:text-xl" style="box-shadow: 0 4px 0 #7a3c3c;">Leave</button>
@@ -437,8 +453,9 @@
             const btn = document.getElementById('btn-create-room');
             btn.disabled = true;
             const originalText = btn.innerText;
-            btn.innerText = "Opening Table...";
+            btn.innerText = "Brewing Table...";
             btn.classList.add('opacity-70', 'cursor-not-allowed');
+            updateConnStatus('connecting');
 
             const code = generateRoomCode();
             const roomRef = getRoomRef(code);
@@ -477,6 +494,7 @@
                 const originalText = btn.innerText;
                 btn.innerText = "Joining...";
                 btn.classList.add('opacity-70', 'cursor-not-allowed');
+                updateConnStatus('connecting');
 
                 await joinRoom(code);
 
@@ -498,7 +516,7 @@
             try {
                 const roomSnap = await getDoc(roomRef);
                 if (!roomSnap.exists()) {
-                    showToast("Room not found!");
+                    showDialog(`Table "${code}" does not exist or has already been closed.`);
                     return false;
                 }
 
@@ -607,6 +625,17 @@
             }, 3000);
         };
 
+        window.showDialog = (msg) => {
+            document.getElementById('dialog-msg').innerText = msg;
+            document.getElementById('dialog-overlay').classList.remove('hidden');
+            document.getElementById('dialog-overlay').classList.add('flex');
+        };
+
+        window.closeDialog = () => {
+            document.getElementById('dialog-overlay').classList.add('hidden');
+            document.getElementById('dialog-overlay').classList.remove('flex');
+        };
+
         window.copyInviteLink = () => {
             const link = window.location.href;
             const textArea = document.createElement("textarea");
@@ -621,6 +650,30 @@
             }
             document.body.removeChild(textArea);
         };
+
+        window.updateConnStatus = (status, ping) => {
+            const indicator = document.getElementById('conn-indicator');
+            const statusText = document.getElementById('conn-status');
+            const pingText = document.getElementById('ping-value');
+
+            if (!indicator || !statusText || !pingText) return;
+
+            if (!navigator.onLine || status === 'disconnected') {
+                indicator.className = "w-2 h-2 md:w-3 md:h-3 bg-red-500 rounded-full";
+                statusText.innerText = "Disconnected";
+                pingText.innerText = "Ping: -- ms";
+            } else if (status === 'connecting') {
+                indicator.className = "w-2 h-2 md:w-3 md:h-3 bg-yellow-400 rounded-full animate-pulse";
+                statusText.innerText = "Connecting...";
+            } else if (status === 'connected') {
+                indicator.className = "w-2 h-2 md:w-3 md:h-3 bg-green-400 rounded-full";
+                statusText.innerText = "Connected";
+                if (ping !== undefined) pingText.innerText = `Ping: ${ping} ms`;
+            }
+        };
+
+        window.addEventListener('online', () => { if (currentRoom) updateConnStatus('connected'); });
+        window.addEventListener('offline', () => { if (currentRoom) updateConnStatus('disconnected'); });
 
         function updateOnlineCount() {
             if (!gameState.players) return;
@@ -804,15 +857,15 @@
         }
 
         function drawChatBubble(x, y, text) {
-            ctx.font = '18px "VT323", monospace';
-            const padding = 10;
+            ctx.font = '24px "VT323", monospace';
+            const padding = 12;
             const textWidth = ctx.measureText(text).width;
             const bubbleWidth = textWidth + padding * 2;
-            const bubbleHeight = 32;
+            const bubbleHeight = 40;
             
             // Position bubble above the player and username, centered
             const bubbleX = x + (PLAYER_SIZE/2) - (bubbleWidth/2);
-            const bubbleY = y - bubbleHeight - 40;
+            const bubbleY = y - bubbleHeight - 48;
 
             // Shadow
             ctx.fillStyle = 'rgba(0,0,0,0.15)';
@@ -926,13 +979,13 @@
                     const username = isMe ? localPlayer.username : (p.username || 'Guest');
 
                     // Draw Username above player
-                    ctx.font = '16px "VT323", monospace';
+                    ctx.font = '22px "VT323", monospace';
                     const nameWidth = ctx.measureText(username).width;
                     ctx.fillStyle = 'rgba(0,0,0,0.5)';
-                    ctx.fillRect(drawX + PLAYER_SIZE/2 - nameWidth/2 - 4, drawY + bounceY - 24, nameWidth + 8, 20);
+                    ctx.fillRect(drawX + PLAYER_SIZE/2 - nameWidth/2 - 6, drawY + bounceY - 32, nameWidth + 12, 26);
                     ctx.fillStyle = '#ffffff';
                     ctx.textAlign = 'center';
-                    ctx.fillText(username, drawX + PLAYER_SIZE/2, drawY + bounceY - 10);
+                    ctx.fillText(username, drawX + PLAYER_SIZE/2, drawY + bounceY - 12);
                     ctx.textAlign = 'left';
 
                     // Save context for rotation/bouncing of character
@@ -1022,24 +1075,36 @@
             loop();
         }
 
+        let isSyncing = false;
         function startNetworkSync() {
             // Push local position & activity ping to Firestore periodically
-            networkSyncId = setInterval(() => {
-                if (!currentRoom || !currentUser) return;
+            networkSyncId = setInterval(async () => {
+                if (!currentRoom || !currentUser || isSyncing) return;
                 
+                if (!navigator.onLine) {
+                    updateConnStatus('disconnected');
+                    return;
+                }
+
                 const roomRef = getRoomRef(currentRoom);
                 localPlayer.lastSeen = Date.now();
+                const pingStart = Date.now();
+                isSyncing = true;
 
-                // Fire & forget update
-                updateDoc(roomRef, {
-                    [`players.${currentUser.uid}.x`]: localPlayer.x,
-                    [`players.${currentUser.uid}.y`]: localPlayer.y,
-                    [`players.${currentUser.uid}.lastSeen`]: localPlayer.lastSeen,
-                    [`players.${currentUser.uid}.username`]: localPlayer.username
-                }).catch(e => {
+                try {
+                    await updateDoc(roomRef, {
+                        [`players.${currentUser.uid}.x`]: localPlayer.x,
+                        [`players.${currentUser.uid}.y`]: localPlayer.y,
+                        [`players.${currentUser.uid}.lastSeen`]: localPlayer.lastSeen,
+                        [`players.${currentUser.uid}.username`]: localPlayer.username
+                    });
+                    const ping = Date.now() - pingStart;
+                    updateConnStatus('connected', ping);
+                } catch(e) {
                     // Suppress harmless transient network errors in console
-                });
-
+                } finally {
+                    isSyncing = false;
+                }
             }, 100); // 10 ticks per second is generally safe for small firebase lobbies
         }
 
