@@ -271,6 +271,7 @@
         let rtdbPlayersRef = null;
         let rtdbMyRef = null;
         let lastPingTime = 0;
+        let currentEmaPing = null;
 
         // Pastel cozy colors for players
         const PLAYER_COLORS = ['#ffb3ba', '#ffdfba', '#ffffba', '#baffc9', '#bae1ff', '#e0baff', '#ffbaf2'];
@@ -1189,9 +1190,22 @@
                     msgTime: localPlayer.msgTime || 0,
                     lastSeen: localPlayer.lastSeen
                 }).then(() => {
-                    // Calculate ping from round-trip
-                    const ping = Date.now() - localPlayer.lastSeen;
-                    updateConnStatus('connected', ping);
+                    // Calculate ping from round-trip using EMA (Exponential Moving Average)
+                    const currentPing = Date.now() - localPlayer.lastSeen;
+                    
+                    if (currentEmaPing === null) {
+                        currentEmaPing = currentPing;
+                    } else {
+                        // Alpha of 0.1 means new ping gets 10% weight, old history gets 90%
+                        // This smooths out small jitters but reacts smoothly to big lag spikes
+                        currentEmaPing = (currentPing * 0.1) + (currentEmaPing * 0.9);
+                    }
+                    
+                    const now = Date.now();
+                    if (now - lastPingTime > 1000) {
+                        updateConnStatus('connected', Math.round(currentEmaPing));
+                        lastPingTime = now;
+                    }
                 }).catch(e => {});
             }, 50); // 20 ticks per second
         }
