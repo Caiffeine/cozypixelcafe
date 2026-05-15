@@ -241,7 +241,8 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getDatabase, ref as rtdbRef, set as rtdbSet, onValue, off, update as rtdbUpdate, remove as rtdbRemove, serverTimestamp as rtdbServerTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+        import { getDatabase, ref as rtdbRef, set as rtdbSet, onValue, off, update as rtdbUpdate, remove as rtdbRemove, serverTimestamp as rtdbServerTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+        import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app-check.js";
 
         // Global variables setup
         window.appId = typeof __app_id !== 'undefined' ? __app_id : 'cozy-cafe-local';
@@ -256,6 +257,10 @@
         };
 
         const app = initializeApp(firebaseConfig);
+        const appCheck = initializeAppCheck(app, {
+            provider: new ReCaptchaV3Provider('6LefXOssAAAAAFycBWN1FsMHNcyVUxCfccPHpcH5'),
+            isTokenAutoRefreshEnabled: true
+        });
         const auth = getAuth(app);
         const db = getFirestore(app);
         const rtdb = getDatabase(app);
@@ -451,7 +456,7 @@
                 showToast("Please enter a username!");
                 return null;
             }
-            return val;
+            return val.substring(0, 20); // Enforce max 20 chars
         }
 
         window.createRoom = async () => {
@@ -554,6 +559,9 @@
                 // Set up RTDB real-time sync for player positions
                 rtdbPlayersRef = rtdbRef(rtdb, `rooms/${code}/players`);
                 rtdbMyRef = rtdbRef(rtdb, `rooms/${code}/players/${currentUser.uid}`);
+                
+                // Ensure ghost player is removed when websocket disconnects
+                onDisconnect(rtdbMyRef).remove();
 
                 // Write our initial position to RTDB
                 await rtdbSet(rtdbMyRef, {
@@ -783,9 +791,10 @@
         window.handleChatSubmit = async (e) => {
             e.preventDefault();
             const input = document.getElementById('chat-input');
-            const msg = input.value.trim();
+            let msg = input.value.trim();
             
             if (msg && currentRoom && currentUser) {
+                msg = msg.substring(0, 50); // Enforce max 50 chars for rules
                 localPlayer.msg = msg;
                 localPlayer.msgTime = Date.now();
                 
