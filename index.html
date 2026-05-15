@@ -240,13 +240,15 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, addDoc, query, where, deleteDoc, getDocs, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getDatabase, ref as rtdbRef, set as rtdbSet, onValue, off, update as rtdbUpdate, remove as rtdbRemove, serverTimestamp as rtdbServerTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
 
         // Global variables setup
         window.appId = typeof __app_id !== 'undefined' ? __app_id : 'cozy-cafe-local';
         const firebaseConfig = {
             apiKey: "AIzaSyCKykbYKooqw2a-sKc6URdToA9G6MGLU_Y",
             authDomain: "cozy-cafe-4d076.firebaseapp.com",
+            databaseURL: "https://cozy-cafe-4d076-default-rtdb.asia-southeast1.firebasedatabase.app",
             projectId: "cozy-cafe-4d076",
             storageBucket: "cozy-cafe-4d076.firebasestorage.app",
             messagingSenderId: "966046310844",
@@ -256,6 +258,7 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
+        const rtdb = getDatabase(app);
 
         // Game State Variables
         let currentUser = null;
@@ -264,13 +267,10 @@
         
         let gameState = { players: {} };
 
-        // WebRTC Variables
-        let peerConnections = {};
-        let dataChannels = {};
-        let unsubscribeSignals = null;
-        let pingTimes = {};
-        let pings = {};
-        const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        // RTDB Sync Variables
+        let rtdbPlayersRef = null;
+        let rtdbMyRef = null;
+        let lastPingTime = 0;
 
         // Pastel cozy colors for players
         const PLAYER_COLORS = ['#ffb3ba', '#ffdfba', '#ffffba', '#baffc9', '#bae1ff', '#e0baff', '#ffbaf2'];
@@ -550,52 +550,69 @@
                 document.getElementById('game-ui').classList.remove('hidden');
                 document.getElementById('game-ui').classList.add('flex');
 
-                // Listen for updates
-                unsubscribeRoom = onSnapshot(roomRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        if (!gameState.players) gameState.players = {};
-                        if (data.players) {
-                            for (const uid in data.players) {
-                                if (uid !== currentUser.uid) {
-                                    if (!gameState.players[uid]) {
-                                        gameState.players[uid] = data.players[uid];
-                                    } else {
-                                        gameState.players[uid].lastSeen = data.players[uid].lastSeen;
-                                    }
-                                    
-                                    // The player with higher UID initiates the WebRTC connection
-                                    if (!peerConnections[uid] && !dataChannels[uid]) {
-                                        if (currentUser.uid > uid) {
-                                            console.log(`[WebRTC] I (${currentUser.uid.slice(0,6)}) am caller, initiating to ${uid.slice(0,6)}`);
-                                            initiateConnection(uid, code);
-                                        } else {
-                                            console.log(`[WebRTC] I (${currentUser.uid.slice(0,6)}) am receiver, waiting for offer from ${uid.slice(0,6)}`);
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            const now = Date.now();
-                            for (const uid in gameState.players) {
-                                if (uid !== currentUser.uid) {
-                                    if (!data.players[uid] || (now - data.players[uid].lastSeen > 15000)) {
-                                        delete gameState.players[uid];
-                                        closeConnection(uid);
-                                    }
-                                }
+                // Set up RTDB real-time sync for player positions
+                rtdbPlayersRef = rtdbRef(rtdb, `rooms/${code}/players`);
+                rtdbMyRef = rtdbRef(rtdb, `rooms/${code}/players/${currentUser.uid}`);
+
+                // Write our initial position to RTDB
+                await rtdbSet(rtdbMyRef, {
+                    x: localPlayer.x,
+                    y: localPlayer.y,
+                    vx: 0,
+                    vy: 0,
+                    color: localPlayer.color,
+                    username: localPlayer.username,
+                    msg: localPlayer.msg,
+                    msgTime: localPlayer.msgTime,
+                    lastSeen: Date.now()
+                });
+
+                // Listen for ALL player position updates via RTDB WebSocket
+                onValue(rtdbPlayersRef, (snapshot) => {
+                    const data = snapshot.val();
+                    if (!data) return;
+                    if (!gameState.players) gameState.players = {};
+                    
+                    const now = Date.now();
+                    for (const uid in data) {
+                        if (uid !== currentUser.uid) {
+                            if (!gameState.players[uid]) {
+                                gameState.players[uid] = data[uid];
+                            } else {
+                                const p = gameState.players[uid];
+                                p.x = data[uid].x;
+                                p.y = data[uid].y;
+                                p.vx = data[uid].vx || 0;
+                                p.vy = data[uid].vy || 0;
+                                p.color = data[uid].color;
+                                p.username = data[uid].username;
+                                p.msg = data[uid].msg;
+                                p.msgTime = data[uid].msgTime;
+                                p.lastSeen = data[uid].lastSeen || now;
                             }
                         }
-                        updateOnlineCount();
-                    } else {
+                    }
+                    
+                    // Remove players no longer in RTDB
+                    for (const uid in gameState.players) {
+                        if (uid !== currentUser.uid && !data[uid]) {
+                            delete gameState.players[uid];
+                            delete clientState[uid];
+                        }
+                    }
+                    
+                    updateOnlineCount();
+                });
+
+                // Firestore listener just for room existence (host closing table)
+                unsubscribeRoom = onSnapshot(roomRef, (docSnap) => {
+                    if (!docSnap.exists()) {
                         showDialog("The host closed this table.");
                         leaveRoom();
                     }
-                }, (error) => {
-                    console.error("Sync error:", error);
                 });
 
-                setupWebRTC(code);
+                updateConnStatus('connected');
                 startGameLoop();
                 startNetworkSync();
                 initJoystick();
@@ -644,20 +661,20 @@
             });
         }
 
-        let heartbeatId = null;
-
         window.leaveRoom = async () => {
             const code = currentRoom;
             if (unsubscribeRoom) unsubscribeRoom();
-            if (unsubscribeSignals) unsubscribeSignals();
             if (gameLoopId) cancelAnimationFrame(gameLoopId);
             if (networkSyncId) clearInterval(networkSyncId);
-            if (heartbeatId) clearInterval(heartbeatId);
             
-            // Close all connections
-            for (const uid in peerConnections) closeConnection(uid);
+            // Remove from RTDB and detach listener
+            if (rtdbMyRef) rtdbRemove(rtdbMyRef).catch(e => {});
+            if (rtdbPlayersRef) off(rtdbPlayersRef);
+            rtdbPlayersRef = null;
+            rtdbMyRef = null;
 
             currentRoom = null;
+            gameState = { players: {} };
             document.getElementById('menu-ui').classList.remove('hidden');
             document.getElementById('game-ui').classList.add('hidden');
             document.getElementById('game-ui').classList.remove('flex');
@@ -665,7 +682,7 @@
             const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
             window.history.pushState({path:newUrl},'',newUrl);
 
-            // Remove ourselves from Firestore so others see us leave immediately
+            // Also remove from Firestore
             if (code && currentUser) {
                 try {
                     const roomRef = getRoomRef(code);
@@ -1138,252 +1155,33 @@
         }
 
         function startNetworkSync() {
-            // WebRTC high-speed broadcast loop (20 fps)
+            // RTDB high-speed sync loop (20 ticks/sec)
             networkSyncId = setInterval(() => {
-                if (!currentRoom || !currentUser) return;
+                if (!currentRoom || !currentUser || !rtdbMyRef) return;
                 
-                const payload = JSON.stringify({
-                    t: 'state',
-                    x: localPlayer.x,
-                    y: localPlayer.y,
-                    vx: localPlayer.vx,
-                    vy: localPlayer.vy,
-                    c: localPlayer.color,
-                    u: localPlayer.username,
-                    m: localPlayer.msg,
-                    mt: localPlayer.msgTime
-                });
-
-                let hasConnectedPeers = false;
-                for (const uid in dataChannels) {
-                    const ch = dataChannels[uid];
-                    if (ch.readyState === 'open') {
-                        hasConnectedPeers = true;
-                        ch.send(payload);
-                    }
+                if (!navigator.onLine) {
+                    updateConnStatus('disconnected');
+                    return;
                 }
-                
-                // Ping calculation request (every 1 second)
-                if (hasConnectedPeers && Date.now() % 1000 < 50) {
-                    const pingId = Date.now().toString();
-                    pingTimes[pingId] = Date.now();
-                    const pingPayload = JSON.stringify({ t: 'ping', id: pingId });
-                    for (const uid in dataChannels) {
-                        const ch = dataChannels[uid];
-                        if (ch.readyState === 'open') {
-                            ch.send(pingPayload);
-                        }
-                    }
-                }
-            }, 50);
 
-            // Firestore heartbeat loop (every 5 seconds) to keep us alive in the lobby
-            heartbeatId = setInterval(async () => {
-                if (!currentRoom || !currentUser || !navigator.onLine) return;
-                
-                const roomRef = getRoomRef(currentRoom);
                 localPlayer.lastSeen = Date.now();
                 
-                try {
-                    await updateDoc(roomRef, {
-                        [`players.${currentUser.uid}.lastSeen`]: localPlayer.lastSeen,
-                        [`players.${currentUser.uid}.username`]: localPlayer.username,
-                        [`players.${currentUser.uid}.color`]: localPlayer.color
-                    });
-                    if (Object.keys(dataChannels).length === 0) {
-                        updateConnStatus('connected'); // Show connected even if alone
-                    }
-                } catch(e) {}
-            }, 5000);
-        }
-        
-        // --- WebRTC Logic ---
-        function setupWebRTC(code) {
-            const roomRef = getRoomRef(code);
-            const signalsRef = collection(roomRef, 'signals');
-            const q = query(signalsRef, where('to', '==', currentUser.uid));
-            
-            unsubscribeSignals = onSnapshot(q, (snapshot) => {
-                snapshot.docChanges().forEach((change) => {
-                    if (change.type === 'added') {
-                        const signal = change.doc.data();
-                        console.log(`[WebRTC] Received signal: type=${signal.type} from=${signal.from.slice(0,6)}`);
-                        handleSignal(signal, change.doc.id, code);
-                    }
-                });
-            });
-        }
-
-        async function handleSignal(signal, docId, code) {
-            const { from, type, data } = signal;
-            
-            // Delete the signal so it doesn't process again
-            const signalRef = doc(getRoomRef(code), 'signals', docId);
-            deleteDoc(signalRef).catch(e => {});
-
-            if (type === 'offer') {
-                if (peerConnections[from]) closeConnection(from);
-                createPeerConnection(from, code);
-            } else if (!peerConnections[from]) {
-                createPeerConnection(from, code);
-            }
-
-            const pc = peerConnections[from];
-
-            try {
-                if (type === 'offer') {
-                    await pc.setRemoteDescription(new RTCSessionDescription(data));
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
-                    sendSignal(from, 'answer', answer, code);
-                    if (pc.iceQueue) {
-                        for (const c of pc.iceQueue) await pc.addIceCandidate(new RTCIceCandidate(c));
-                        pc.iceQueue = [];
-                    }
-                } else if (type === 'answer') {
-                    await pc.setRemoteDescription(new RTCSessionDescription(data));
-                    if (pc.iceQueue) {
-                        for (const c of pc.iceQueue) await pc.addIceCandidate(new RTCIceCandidate(c));
-                        pc.iceQueue = [];
-                    }
-                } else if (type === 'ice-candidate') {
-                    if (pc.remoteDescription && pc.remoteDescription.type) {
-                        await pc.addIceCandidate(new RTCIceCandidate(data));
-                    } else {
-                        if (!pc.iceQueue) pc.iceQueue = [];
-                        pc.iceQueue.push(data);
-                    }
-                }
-            } catch(e) {
-                console.error("WebRTC Error:", e);
-            }
-        }
-
-        function createPeerConnection(targetUid, code) {
-            const pc = new RTCPeerConnection(rtcConfig);
-            peerConnections[targetUid] = pc;
-            pc.iceQueue = [];
-
-            pc.onicecandidate = (event) => {
-                if (event.candidate) {
-                    sendSignal(targetUid, 'ice-candidate', event.candidate, code);
-                }
-            };
-
-            pc.ondatachannel = (event) => {
-                console.log(`[WebRTC] Received data channel from ${targetUid.slice(0,6)}`);
-                setupDataChannel(event.channel, targetUid);
-            };
-
-            pc.oniceconnectionstatechange = () => {
-                console.log(`[WebRTC] ICE state with ${targetUid.slice(0,6)}: ${pc.iceConnectionState}`);
-                if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-                    closeConnection(targetUid);
-                }
-            };
-
-            pc.onconnectionstatechange = () => {
-                console.log(`[WebRTC] Connection state with ${targetUid.slice(0,6)}: ${pc.connectionState}`);
-            };
-
-            return pc;
-        }
-
-        async function initiateConnection(targetUid, code) {
-            if (peerConnections[targetUid]) {
-                console.log(`[WebRTC] Already have PC for ${targetUid.slice(0,6)}, skipping`);
-                return;
-            }
-            console.log(`[WebRTC] Creating offer for ${targetUid.slice(0,6)}`);
-            const pc = createPeerConnection(targetUid, code);
-            
-            // Only the caller creates the data channel
-            const channel = pc.createDataChannel('gameData');
-            setupDataChannel(channel, targetUid);
-            
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            console.log(`[WebRTC] Sending offer to ${targetUid.slice(0,6)}`);
-            sendSignal(targetUid, 'offer', offer, code);
-        }
-
-        function sendSignal(to, type, data, code) {
-            const signalsRef = collection(getRoomRef(code), 'signals');
-            addDoc(signalsRef, {
-                to: to,
-                from: currentUser.uid,
-                type: type,
-                data: JSON.parse(JSON.stringify(data)),
-                timestamp: Date.now()
-            });
-        }
-
-        function setupDataChannel(channel, targetUid) {
-            dataChannels[targetUid] = channel;
-            
-            channel.onopen = () => {
-                console.log(`[WebRTC] ✅ Data Channel OPEN with ${targetUid.slice(0,6)}`);
-                updateConnStatus('connected');
-                showToast('P2P connected!');
-            };
-
-            channel.onerror = (e) => {
-                console.error(`[WebRTC] Data Channel ERROR with ${targetUid.slice(0,6)}:`, e);
-            };
-
-            channel.onclose = () => {
-                console.log(`[WebRTC] Data Channel CLOSED with ${targetUid.slice(0,6)}`);
-                closeConnection(targetUid);
-            };
-
-            channel.onmessage = (event) => {
-                const msg = JSON.parse(event.data);
-                if (msg.t === 'ping') {
-                    channel.send(JSON.stringify({ t: 'pong', id: msg.id }));
-                } else if (msg.t === 'pong') {
-                    const start = pingTimes[msg.id];
-                    if (start) {
-                        pings[targetUid] = Date.now() - start;
-                        delete pingTimes[msg.id];
-                        updateAveragePing();
-                    }
-                } else if (msg.t === 'state') {
-                    if (!gameState.players[targetUid]) gameState.players[targetUid] = {};
-                    const p = gameState.players[targetUid];
-                    p.x = msg.x;
-                    p.y = msg.y;
-                    p.vx = msg.vx;
-                    p.vy = msg.vy;
-                    p.color = msg.c;
-                    p.username = msg.u;
-                    p.msg = msg.m;
-                    p.msgTime = msg.mt;
-                    p.lastSeen = Date.now();
-                }
-            };
-        }
-
-        function closeConnection(uid) {
-            if (dataChannels[uid]) {
-                dataChannels[uid].close();
-                delete dataChannels[uid];
-            }
-            if (peerConnections[uid]) {
-                peerConnections[uid].close();
-                delete peerConnections[uid];
-            }
-            delete pings[uid];
-            updateAveragePing();
-        }
-
-        function updateAveragePing() {
-            const vals = Object.values(pings);
-            if (vals.length === 0) {
-                updateConnStatus('connected'); // No peers
-                return;
-            }
-            const avg = Math.round(vals.reduce((a,b)=>a+b,0) / vals.length);
-            updateConnStatus('connected', avg);
+                rtdbSet(rtdbMyRef, {
+                    x: Math.round(localPlayer.x),
+                    y: Math.round(localPlayer.y),
+                    vx: Math.round(localPlayer.vx * 10) / 10,
+                    vy: Math.round(localPlayer.vy * 10) / 10,
+                    color: localPlayer.color,
+                    username: localPlayer.username,
+                    msg: localPlayer.msg || '',
+                    msgTime: localPlayer.msgTime || 0,
+                    lastSeen: localPlayer.lastSeen
+                }).then(() => {
+                    // Calculate ping from round-trip
+                    const ping = Date.now() - localPlayer.lastSeen;
+                    updateConnStatus('connected', ping);
+                }).catch(e => {});
+            }, 50); // 20 ticks per second
         }
 
     </script>
