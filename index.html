@@ -240,7 +240,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, addDoc, query, where, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, addDoc, query, where, deleteDoc, getDocs, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Global variables setup
         window.appId = typeof __app_id !== 'undefined' ? __app_id : 'cozy-cafe-local';
@@ -560,6 +560,9 @@
                                 if (uid !== currentUser.uid) {
                                     if (!gameState.players[uid]) {
                                         gameState.players[uid] = data.players[uid];
+                                    } else {
+                                        // Update lastSeen fallback from Firestore
+                                        gameState.players[uid].lastSeen = data.players[uid].lastSeen;
                                     }
                                     
                                     // WebRTC Handshake Initiation
@@ -640,7 +643,8 @@
 
         let heartbeatId = null;
 
-        window.leaveRoom = () => {
+        window.leaveRoom = async () => {
+            const code = currentRoom;
             if (unsubscribeRoom) unsubscribeRoom();
             if (unsubscribeSignals) unsubscribeSignals();
             if (gameLoopId) cancelAnimationFrame(gameLoopId);
@@ -657,6 +661,16 @@
             
             const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
             window.history.pushState({path:newUrl},'',newUrl);
+
+            // Remove ourselves from Firestore so others see us leave immediately
+            if (code && currentUser) {
+                try {
+                    const roomRef = getRoomRef(code);
+                    await updateDoc(roomRef, {
+                        [`players.${currentUser.uid}`]: deleteField()
+                    });
+                } catch(e) {}
+            }
         };
 
         window.showToast = (msg) => {
@@ -1203,27 +1217,48 @@
             const signalRef = doc(getRoomRef(code), 'signals', docId);
             deleteDoc(signalRef).catch(e => {});
 
-            if (!peerConnections[from]) {
+            if (type === 'offer') {
+                if (peerConnections[from]) closeConnection(from);
+                createPeerConnection(from, code);
+            } else if (!peerConnections[from]) {
                 createPeerConnection(from, code);
             }
 
             const pc = peerConnections[from];
 
-            if (type === 'offer') {
-                await pc.setRemoteDescription(new RTCSessionDescription(data));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                sendSignal(from, 'answer', answer, code);
-            } else if (type === 'answer') {
-                await pc.setRemoteDescription(new RTCSessionDescription(data));
-            } else if (type === 'ice-candidate') {
-                await pc.addIceCandidate(new RTCIceCandidate(data));
+            try {
+                if (type === 'offer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(data));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    sendSignal(from, 'answer', answer, code);
+                    if (pc.iceQueue) {
+                        for (const c of pc.iceQueue) await pc.addIceCandidate(new RTCIceCandidate(c));
+                        pc.iceQueue = [];
+                    }
+                } else if (type === 'answer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(data));
+                    if (pc.iceQueue) {
+                        for (const c of pc.iceQueue) await pc.addIceCandidate(new RTCIceCandidate(c));
+                        pc.iceQueue = [];
+                    }
+                } else if (type === 'ice-candidate') {
+                    if (pc.remoteDescription && pc.remoteDescription.type) {
+                        await pc.addIceCandidate(new RTCIceCandidate(data));
+                    } else {
+                        if (!pc.iceQueue) pc.iceQueue = [];
+                        pc.iceQueue.push(data);
+                    }
+                }
+            } catch(e) {
+                console.error("WebRTC Error:", e);
             }
         }
 
         function createPeerConnection(targetUid, code) {
             const pc = new RTCPeerConnection(rtcConfig);
             peerConnections[targetUid] = pc;
+            pc.iceQueue = [];
 
             pc.onicecandidate = (event) => {
                 if (event.candidate) {
