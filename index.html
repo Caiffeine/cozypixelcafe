@@ -240,7 +240,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, addDoc, query, where, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Global variables setup
         window.appId = typeof __app_id !== 'undefined' ? __app_id : 'cozy-cafe-local';
@@ -263,6 +263,14 @@
         let unsubscribeRoom = null;
         
         let gameState = { players: {} };
+
+        // WebRTC Variables
+        let peerConnections = {};
+        let dataChannels = {};
+        let unsubscribeSignals = null;
+        let pingTimes = {};
+        let pings = {};
+        const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
         // Pastel cozy colors for players
         const PLAYER_COLORS = ['#ffb3ba', '#ffdfba', '#ffffba', '#baffc9', '#bae1ff', '#e0baff', '#ffbaf2'];
@@ -533,6 +541,9 @@
                 await updateDoc(roomRef, {
                     [`players.${currentUser.uid}`]: localPlayer
                 });
+                
+                if (!gameState.players) gameState.players = {};
+                gameState.players[currentUser.uid] = localPlayer;
 
                 // Transition UI
                 document.getElementById('menu-ui').classList.add('hidden');
@@ -542,16 +553,43 @@
                 // Listen for updates
                 unsubscribeRoom = onSnapshot(roomRef, (docSnap) => {
                     if (docSnap.exists()) {
-                        gameState = docSnap.data();
+                        const data = docSnap.data();
+                        if (!gameState.players) gameState.players = {};
+                        if (data.players) {
+                            for (const uid in data.players) {
+                                if (uid !== currentUser.uid) {
+                                    if (!gameState.players[uid]) {
+                                        gameState.players[uid] = data.players[uid];
+                                    }
+                                    
+                                    // WebRTC Handshake Initiation
+                                    if (!peerConnections[uid] && currentUser.uid > uid) {
+                                        initiateConnection(uid, code);
+                                    }
+                                }
+                            }
+                            
+                            // Remove disconnected players
+                            const now = Date.now();
+                            for (const uid in gameState.players) {
+                                if (uid !== currentUser.uid) {
+                                    if (!data.players[uid] || (now - data.players[uid].lastSeen > 15000)) {
+                                        delete gameState.players[uid];
+                                        closeConnection(uid);
+                                    }
+                                }
+                            }
+                        }
                         updateOnlineCount();
                     } else {
-                        showToast("The host closed this table.");
+                        showDialog("The host closed this table.");
                         leaveRoom();
                     }
                 }, (error) => {
                     console.error("Sync error:", error);
                 });
 
+                setupWebRTC(code);
                 startGameLoop();
                 startNetworkSync();
                 initJoystick();
@@ -600,11 +638,18 @@
             });
         }
 
+        let heartbeatId = null;
+
         window.leaveRoom = () => {
             if (unsubscribeRoom) unsubscribeRoom();
+            if (unsubscribeSignals) unsubscribeSignals();
             if (gameLoopId) cancelAnimationFrame(gameLoopId);
             if (networkSyncId) clearInterval(networkSyncId);
+            if (heartbeatId) clearInterval(heartbeatId);
             
+            // Close all connections
+            for (const uid in peerConnections) closeConnection(uid);
+
             currentRoom = null;
             document.getElementById('menu-ui').classList.remove('hidden');
             document.getElementById('game-ui').classList.add('hidden');
@@ -1075,37 +1120,211 @@
             loop();
         }
 
-        let isSyncing = false;
         function startNetworkSync() {
-            // Push local position & activity ping to Firestore periodically
-            networkSyncId = setInterval(async () => {
-                if (!currentRoom || !currentUser || isSyncing) return;
+            // WebRTC high-speed broadcast loop (20 fps)
+            networkSyncId = setInterval(() => {
+                if (!currentRoom || !currentUser) return;
                 
-                if (!navigator.onLine) {
-                    updateConnStatus('disconnected');
-                    return;
-                }
+                const payload = JSON.stringify({
+                    t: 'state',
+                    x: localPlayer.x,
+                    y: localPlayer.y,
+                    vx: localPlayer.vx,
+                    vy: localPlayer.vy,
+                    c: localPlayer.color,
+                    u: localPlayer.username,
+                    m: localPlayer.msg,
+                    mt: localPlayer.msgTime
+                });
 
+                let hasConnectedPeers = false;
+                for (const uid in dataChannels) {
+                    const ch = dataChannels[uid];
+                    if (ch.readyState === 'open') {
+                        hasConnectedPeers = true;
+                        ch.send(payload);
+                    }
+                }
+                
+                // Ping calculation request (every 1 second)
+                if (hasConnectedPeers && Date.now() % 1000 < 50) {
+                    const pingId = Date.now().toString();
+                    pingTimes[pingId] = Date.now();
+                    const pingPayload = JSON.stringify({ t: 'ping', id: pingId });
+                    for (const uid in dataChannels) {
+                        const ch = dataChannels[uid];
+                        if (ch.readyState === 'open') {
+                            ch.send(pingPayload);
+                        }
+                    }
+                }
+            }, 50);
+
+            // Firestore heartbeat loop (every 5 seconds) to keep us alive in the lobby
+            heartbeatId = setInterval(async () => {
+                if (!currentRoom || !currentUser || !navigator.onLine) return;
+                
                 const roomRef = getRoomRef(currentRoom);
                 localPlayer.lastSeen = Date.now();
-                const pingStart = Date.now();
-                isSyncing = true;
-
+                
                 try {
                     await updateDoc(roomRef, {
-                        [`players.${currentUser.uid}.x`]: localPlayer.x,
-                        [`players.${currentUser.uid}.y`]: localPlayer.y,
                         [`players.${currentUser.uid}.lastSeen`]: localPlayer.lastSeen,
-                        [`players.${currentUser.uid}.username`]: localPlayer.username
+                        [`players.${currentUser.uid}.username`]: localPlayer.username,
+                        [`players.${currentUser.uid}.color`]: localPlayer.color
                     });
-                    const ping = Date.now() - pingStart;
-                    updateConnStatus('connected', ping);
-                } catch(e) {
-                    // Suppress harmless transient network errors in console
-                } finally {
-                    isSyncing = false;
+                    if (Object.keys(dataChannels).length === 0) {
+                        updateConnStatus('connected'); // Show connected even if alone
+                    }
+                } catch(e) {}
+            }, 5000);
+        }
+        
+        // --- WebRTC Logic ---
+        function setupWebRTC(code) {
+            const roomRef = getRoomRef(code);
+            const signalsRef = collection(roomRef, 'signals');
+            const q = query(signalsRef, where('to', '==', currentUser.uid));
+            
+            unsubscribeSignals = onSnapshot(q, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === 'added') {
+                        const signal = change.doc.data();
+                        handleSignal(signal, change.doc.id, code);
+                    }
+                });
+            });
+        }
+
+        async function handleSignal(signal, docId, code) {
+            const { from, type, data } = signal;
+            
+            // Delete the signal so it doesn't process again
+            const signalRef = doc(getRoomRef(code), 'signals', docId);
+            deleteDoc(signalRef).catch(e => {});
+
+            if (!peerConnections[from]) {
+                createPeerConnection(from, code);
+            }
+
+            const pc = peerConnections[from];
+
+            if (type === 'offer') {
+                await pc.setRemoteDescription(new RTCSessionDescription(data));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                sendSignal(from, 'answer', answer, code);
+            } else if (type === 'answer') {
+                await pc.setRemoteDescription(new RTCSessionDescription(data));
+            } else if (type === 'ice-candidate') {
+                await pc.addIceCandidate(new RTCIceCandidate(data));
+            }
+        }
+
+        function createPeerConnection(targetUid, code) {
+            const pc = new RTCPeerConnection(rtcConfig);
+            peerConnections[targetUid] = pc;
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    sendSignal(targetUid, 'ice-candidate', event.candidate, code);
                 }
-            }, 100); // 10 ticks per second is generally safe for small firebase lobbies
+            };
+
+            pc.ondatachannel = (event) => {
+                setupDataChannel(event.channel, targetUid);
+            };
+
+            if (currentUser.uid > targetUid) {
+                const channel = pc.createDataChannel('gameData', { negotiated: false });
+                setupDataChannel(channel, targetUid);
+            }
+
+            pc.oniceconnectionstatechange = () => {
+                if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+                    closeConnection(targetUid);
+                }
+            };
+            return pc;
+        }
+
+        async function initiateConnection(targetUid, code) {
+            if (peerConnections[targetUid]) return;
+            const pc = createPeerConnection(targetUid, code);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            sendSignal(targetUid, 'offer', offer, code);
+        }
+
+        function sendSignal(to, type, data, code) {
+            const signalsRef = collection(getRoomRef(code), 'signals');
+            addDoc(signalsRef, {
+                to: to,
+                from: currentUser.uid,
+                type: type,
+                data: JSON.parse(JSON.stringify(data)),
+                timestamp: Date.now()
+            });
+        }
+
+        function setupDataChannel(channel, targetUid) {
+            dataChannels[targetUid] = channel;
+            
+            channel.onopen = () => {
+                console.log(`WebRTC Data Channel opened with ${targetUid}`);
+                updateConnStatus('connected');
+            };
+
+            channel.onclose = () => closeConnection(targetUid);
+
+            channel.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                if (msg.t === 'ping') {
+                    channel.send(JSON.stringify({ t: 'pong', id: msg.id }));
+                } else if (msg.t === 'pong') {
+                    const start = pingTimes[msg.id];
+                    if (start) {
+                        pings[targetUid] = Date.now() - start;
+                        delete pingTimes[msg.id];
+                        updateAveragePing();
+                    }
+                } else if (msg.t === 'state') {
+                    if (!gameState.players[targetUid]) gameState.players[targetUid] = {};
+                    const p = gameState.players[targetUid];
+                    p.x = msg.x;
+                    p.y = msg.y;
+                    p.vx = msg.vx;
+                    p.vy = msg.vy;
+                    p.color = msg.c;
+                    p.username = msg.u;
+                    p.msg = msg.m;
+                    p.msgTime = msg.mt;
+                    p.lastSeen = Date.now();
+                }
+            };
+        }
+
+        function closeConnection(uid) {
+            if (dataChannels[uid]) {
+                dataChannels[uid].close();
+                delete dataChannels[uid];
+            }
+            if (peerConnections[uid]) {
+                peerConnections[uid].close();
+                delete peerConnections[uid];
+            }
+            delete pings[uid];
+            updateAveragePing();
+        }
+
+        function updateAveragePing() {
+            const vals = Object.values(pings);
+            if (vals.length === 0) {
+                updateConnStatus('connected'); // No peers
+                return;
+            }
+            const avg = Math.round(vals.reduce((a,b)=>a+b,0) / vals.length);
+            updateConnStatus('connected', avg);
         }
 
     </script>
