@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cozy Pixel Cafe</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #2c272e;
+            --ui-bg: #4a3e47;
+            --accent: #d89f87;
+        }
+
+        body {
+            font-family: 'VT323', monospace;
+            background-color: var(--bg-color);
+            color: #fff;
+            margin: 0;
+            overflow: hidden;
+            touch-action: none;
+            font-size: 1.2rem;
+        }
+
+        /* Scanline effect for cozy retro vibe */
+        .scanlines::before {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%);
+            z-index: 50;
+            background-size: 100% 4px;
+            pointer-events: none;
+        }
+
+        /* UI Elements */
+        .cafe-btn {
+            background: var(--accent);
+            color: #2c272e;
+            border: 4px solid #b67d65;
+            border-radius: 8px;
+            font-size: 1.5rem;
+            text-shadow: none;
+            transition: transform 0.1s, background 0.1s;
+            box-shadow: 0 4px 0 #8c5d4b;
+        }
+        .cafe-btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 0 0 #8c5d4b;
+        }
+        .cafe-btn:hover {
+            background: #e8b19a;
+        }
+
+        .cafe-input {
+            background: #1e1a1f;
+            border: 4px solid var(--ui-bg);
+            color: #fff;
+            border-radius: 8px;
+            font-family: 'VT323', monospace;
+        }
+        .cafe-input:focus {
+            border-color: var(--accent);
+            outline: none;
+        }
+
+        /* Chat Input Field */
+        #chat-bar {
+            background: rgba(44, 39, 46, 0.9);
+            border-top: 4px solid var(--ui-bg);
+            backdrop-filter: blur(4px);
+        }
+
+        /* Canvas scaling */
+        #game-container {
+            background-color: #000;
+        }
+        canvas {
+            image-rendering: pixelated;
+        }
+
+        /* Toast */
+        #toast {
+            transition: opacity 0.3s, transform 0.3s;
+            pointer-events: none;
+            font-size: 1.2rem;
+        }
+    </style>
+</head>
+<body class="scanlines h-screen w-screen flex flex-col items-center justify-center relative">
+
+    <!-- Toast Notification -->
+    <div id="toast" class="absolute top-8 left-1/2 transform -translate-x-1/2 -translate-y-4 opacity-0 bg-white text-[#2c272e] px-6 py-2 rounded-xl shadow-lg z-50 border-4 border-[#d89f87]">
+        Notification
+    </div>
+
+    <!-- Main Menu UI -->
+    <div id="menu-ui" class="absolute inset-0 flex flex-col items-center justify-center z-40 bg-[#2c272e]/90 backdrop-blur-sm">
+        <div class="bg-[#4a3e47] p-8 rounded-2xl border-4 border-[#6a5a65] max-w-md w-full mx-4 shadow-2xl flex flex-col items-center">
+            <h1 class="text-5xl md:text-6xl text-center text-[#d89f87] mb-2 drop-shadow-md">
+                Cozy Cafe
+            </h1>
+            <p class="text-[#a89f91] mb-8 text-center text-xl">A little pixel lobby to chat with friends.</p>
+            
+            <div id="loading-indicator" class="text-[#d89f87] animate-pulse text-2xl mb-4">Brewing connection...</div>
+
+            <div id="menu-controls" class="hidden flex-col items-center space-y-6 w-full">
+                <button onclick="createRoom()" class="cafe-btn w-full py-3">Open a New Table</button>
+                
+                <div class="flex items-center w-full space-x-4 py-2">
+                    <div class="h-1 bg-[#6a5a65] flex-1 rounded"></div>
+                    <span class="text-xl text-[#a89f91]">OR</span>
+                    <div class="h-1 bg-[#6a5a65] flex-1 rounded"></div>
+                </div>
+
+                <div class="w-full flex flex-col space-y-3">
+                    <input type="text" id="join-code" placeholder="ENTER 4-LETTER CODE" maxlength="4" class="cafe-input w-full p-3 text-center text-2xl uppercase">
+                    <button onclick="joinRoomFromInput()" class="cafe-btn w-full py-3 bg-[#8fb3a0] border-[#6b8c7a] shadow-[0_4px_0_#506e5e]">Join Friends</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game HUD -->
+    <div id="game-ui" class="hidden absolute inset-0 flex-col z-30 pointer-events-none">
+        
+        <!-- Top Bar -->
+        <div class="flex justify-between items-start p-4 w-full pointer-events-auto">
+            <div class="bg-[#4a3e47]/90 border-4 border-[#6a5a65] p-3 rounded-xl shadow-lg flex flex-col gap-2">
+                <div class="text-[#a89f91] text-xl">Room Code: <span id="display-room-code" class="text-white font-bold text-2xl">----</span></div>
+                <button onclick="copyInviteLink()" class="cafe-btn px-3 py-1 text-lg" style="box-shadow: 0 2px 0 #8c5d4b;">Copy Link</button>
+            </div>
+            
+            <!-- Online Counter -->
+            <div class="bg-[#4a3e47]/90 border-4 border-[#6a5a65] p-3 rounded-xl shadow-lg text-xl flex items-center gap-2">
+                <div class="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                <span id="online-count" class="text-white">1 Online</span>
+            </div>
+        </div>
+
+        <!-- Desktop Leave Button -->
+        <button id="desktop-leave" onclick="leaveRoom()" class="hidden md:block absolute top-4 right-40 pointer-events-auto cafe-btn bg-[#c47272] border-[#9a5454] px-4 py-2 text-xl" style="box-shadow: 0 4px 0 #7a3c3c;">Leave</button>
+        
+        <!-- Chat Bar (Bottom) -->
+        <div id="chat-bar" class="mt-auto w-full p-4 flex flex-col md:flex-row gap-4 pointer-events-auto items-center">
+            <!-- Mobile D-Pad (Only visible on small screens) -->
+            <div class="md:hidden flex gap-2 mb-2 w-full justify-center">
+                <div class="grid grid-cols-3 grid-rows-2 gap-2 w-48 opacity-80">
+                    <div id="btn-left" class="bg-white/20 rounded-lg p-2 text-center active:bg-white/40" data-key="ArrowLeft">◀</div>
+                    <div class="flex flex-col gap-2">
+                        <div id="btn-up" class="bg-white/20 rounded-lg p-2 text-center active:bg-white/40" data-key="ArrowUp">▲</div>
+                        <div id="btn-down" class="bg-white/20 rounded-lg p-2 text-center active:bg-white/40" data-key="ArrowDown">▼</div>
+                    </div>
+                    <div id="btn-right" class="bg-white/20 rounded-lg p-2 text-center active:bg-white/40" data-key="ArrowRight">▶</div>
+                </div>
+            </div>
+
+            <!-- Input Field -->
+            <form onsubmit="handleChatSubmit(event)" class="flex w-full max-w-4xl mx-auto gap-2">
+                <input type="text" id="chat-input" placeholder="Say something nice..." maxlength="50" autocomplete="off" class="cafe-input flex-1 p-3 text-xl" onfocus="window.isTyping = true" onblur="window.isTyping = false">
+                <button type="submit" class="cafe-btn px-6 py-2 text-xl">Chat</button>
+                <button type="button" onclick="leaveRoom()" class="md:hidden cafe-btn bg-[#c47272] border-[#9a5454] px-4 py-2 text-xl" style="box-shadow: 0 4px 0 #7a3c3c;">Leave</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Canvas -->
+    <div id="game-container" class="absolute inset-0 z-10 flex items-center justify-center">
+        <canvas id="gameCanvas" width="800" height="600" class="max-w-full max-h-full w-full h-full object-cover"></canvas>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables setup
+        window.appId = typeof __app_id !== 'undefined' ? __app_id : 'cozy-cafe-local';
+        const firebaseConfig = {
+            apiKey: "AIzaSyCKykbYKooqw2a-sKc6URdToA9G6MGLU_Y",
+            authDomain: "cozy-cafe-4d076.firebaseapp.com",
+            projectId: "cozy-cafe-4d076",
+            storageBucket: "cozy-cafe-4d076.firebasestorage.app",
+            messagingSenderId: "966046310844",
+            appId: "1:966046310844:web:dabb171634ad80bad4cbb9"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Game State Variables
+        let currentUser = null;
+        let currentRoom = null;
+        let unsubscribeRoom = null;
+        
+        let gameState = { players: {} };
+
+        // Pastel cozy colors for players
+        const PLAYER_COLORS = ['#ffb3ba', '#ffdfba', '#ffffba', '#baffc9', '#bae1ff', '#e0baff', '#ffbaf2'];
+        
+        let localPlayer = {
+            x: 400,
+            y: 400,
+            color: PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)],
+            msg: "",
+            msgTime: 0,
+            lastSeen: 0
+        };
+
+        // Canvas & Engine variables
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const CANVAS_WIDTH = 800;
+        const CANVAS_HEIGHT = 600;
+        const PLAYER_SIZE = 32;
+        const SPEED = 4;
+
+        // Input state
+        const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, w: false, a: false, s: false, d: false };
+        let gameLoopId = null;
+        let networkSyncId = null;
+        window.isTyping = false; // Prevent WASD movement while typing
+
+        async function initAuth() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Auth error:", error);
+                showToast("Failed to connect to cafe servers.");
+            }
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('loading-indicator').classList.add('hidden');
+                document.getElementById('menu-controls').classList.remove('hidden');
+                document.getElementById('menu-controls').classList.add('flex');
+                
+                // Check if opened via share link
+                const urlParams = new URLSearchParams(window.location.search);
+                const roomFromUrl = urlParams.get('room');
+                if (roomFromUrl && roomFromUrl.length === 4) {
+                    document.getElementById('join-code').value = roomFromUrl.toUpperCase();
+                    window.joinRoomFromInput();
+                }
+            }
+        });
+
+        initAuth();
+
+        function generateRoomCode() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            let code = '';
+            for(let i=0; i<4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+            return code;
+        }
+
+        function getRoomRef(roomCode) {
+            // Strict path rule enforcement
+            return doc(db, 'artifacts', window.appId, 'public', 'data', 'cafe_rooms', roomCode);
+        }
+
+        window.createRoom = async () => {
+            if (!currentUser) return;
+            const code = generateRoomCode();
+            const roomRef = getRoomRef(code);
+            
+            // Spawn near the entrance (bottom center)
+            localPlayer.x = CANVAS_WIDTH / 2 - PLAYER_SIZE / 2;
+            localPlayer.y = CANVAS_HEIGHT - 100;
+            localPlayer.lastSeen = Date.now();
+
+            const initialData = {
+                createdAt: Date.now(),
+                players: {
+                    [currentUser.uid]: localPlayer
+                }
+            };
+
+            try {
+                await setDoc(roomRef, initialData);
+                joinRoom(code);
+            } catch (e) {
+                console.error("Error creating room:", e);
+                showToast("Error opening table.");
+            }
+        };
+
+        window.joinRoomFromInput = () => {
+            const code = document.getElementById('join-code').value.toUpperCase().trim();
+            if (code.length === 4) {
+                joinRoom(code);
+            } else {
+                showToast("Enter a valid 4-letter code.");
+            }
+        };
+
+        async function joinRoom(code) {
+            if (!currentUser) return;
+            const roomRef = getRoomRef(code);
+
+            try {
+                const roomSnap = await getDoc(roomRef);
+                if (!roomSnap.exists()) {
+                    showToast("Room not found!");
+                    return;
+                }
+
+                currentRoom = code;
+                document.getElementById('display-room-code').innerText = code;
+                
+                // Reset local player properties
+                localPlayer.x = CANVAS_WIDTH / 2 - PLAYER_SIZE / 2 + (Math.random() * 40 - 20);
+                localPlayer.y = CANVAS_HEIGHT - 100 + (Math.random() * 20 - 10);
+                localPlayer.msg = "";
+                localPlayer.lastSeen = Date.now();
+                
+                await updateDoc(roomRef, {
+                    [`players.${currentUser.uid}`]: localPlayer
+                });
+
+                // Transition UI
+                document.getElementById('menu-ui').classList.add('hidden');
+                document.getElementById('game-ui').classList.remove('hidden');
+                document.getElementById('game-ui').classList.add('flex');
+
+                // Listen for updates
+                unsubscribeRoom = onSnapshot(roomRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        gameState = docSnap.data();
+                        updateOnlineCount();
+                    } else {
+                        showToast("The host closed this table.");
+                        leaveRoom();
+                    }
+                }, (error) => {
+                    console.error("Sync error:", error);
+                });
+
+                startGameLoop();
+                startNetworkSync();
+                showToast(`Joined table ${code}!`);
+
+                const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?room=' + code;
+                window.history.pushState({path:newUrl},'',newUrl);
+
+                // Focus canvas so we can move immediately
+                canvas.focus();
+
+            } catch (e) {
+                console.error("Error joining:", e);
+                showToast("Failed to join room.");
+            }
+        }
+
+        window.leaveRoom = () => {
+            if (unsubscribeRoom) unsubscribeRoom();
+            if (gameLoopId) cancelAnimationFrame(gameLoopId);
+            if (networkSyncId) clearInterval(networkSyncId);
+            
+            currentRoom = null;
+            document.getElementById('menu-ui').classList.remove('hidden');
+            document.getElementById('game-ui').classList.add('hidden');
+            document.getElementById('game-ui').classList.remove('flex');
+            
+            const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+            window.history.pushState({path:newUrl},'',newUrl);
+        };
+
+        window.showToast = (msg) => {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.style.opacity = 1;
+            toast.style.transform = "translate(-50%, 0)";
+            setTimeout(() => {
+                toast.style.opacity = 0;
+                toast.style.transform = "translate(-50%, -1rem)";
+            }, 3000);
+        };
+
+        window.copyInviteLink = () => {
+            const link = window.location.href;
+            const textArea = document.createElement("textarea");
+            textArea.value = link;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showToast("Invite link copied!");
+            } catch (err) {
+                showToast("Code: " + currentRoom);
+            }
+            document.body.removeChild(textArea);
+        };
+
+        function updateOnlineCount() {
+            if (!gameState.players) return;
+            const now = Date.now();
+            let count = 0;
+            for (const uid in gameState.players) {
+                // Count players seen in the last 15 seconds
+                if (now - gameState.players[uid].lastSeen < 15000) {
+                    count++;
+                }
+            }
+            document.getElementById('online-count').innerText = `${count} Online`;
+        }
+
+        window.handleChatSubmit = async (e) => {
+            e.preventDefault();
+            const input = document.getElementById('chat-input');
+            const msg = input.value.trim();
+            
+            if (msg && currentRoom && currentUser) {
+                localPlayer.msg = msg;
+                localPlayer.msgTime = Date.now();
+                
+                try {
+                    await updateDoc(getRoomRef(currentRoom), {
+                        [`players.${currentUser.uid}.msg`]: msg,
+                        [`players.${currentUser.uid}.msgTime`]: localPlayer.msgTime,
+                        [`players.${currentUser.uid}.lastSeen`]: Date.now()
+                    });
+                } catch(err) {
+                    console.error("Chat send failed", err);
+                }
+                input.value = '';
+            }
+            input.blur();
+            window.isTyping = false;
+            canvas.focus(); // Return focus to canvas for movement
+        };
+
+        // Keyboard Controls
+        window.addEventListener('keydown', (e) => {
+            if (window.isTyping) return; // Ignore movement keys if typing
+            
+            if (keys.hasOwnProperty(e.key) || keys.hasOwnProperty(e.key.toLowerCase())) {
+                keys[e.key] = true;
+                keys[e.key.toLowerCase()] = true;
+            }
+            
+            // Quick focus chat with Enter
+            if (e.key === 'Enter' && currentRoom) {
+                e.preventDefault();
+                document.getElementById('chat-input').focus();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (keys.hasOwnProperty(e.key) || keys.hasOwnProperty(e.key.toLowerCase())) {
+                keys[e.key] = false;
+                keys[e.key.toLowerCase()] = false;
+            }
+        });
+
+        // Touch Controls (Mobile)
+        const dpadBtns = document.querySelectorAll('[data-key]');
+        dpadBtns.forEach(btn => {
+            const key = btn.getAttribute('data-key');
+            const press = (e) => { e.preventDefault(); keys[key] = true; btn.classList.add('bg-white/40'); };
+            const release = (e) => { e.preventDefault(); keys[key] = false; btn.classList.remove('bg-white/40'); };
+
+            btn.addEventListener('touchstart', press, {passive: false});
+            btn.addEventListener('touchend', release, {passive: false});
+            btn.addEventListener('mousedown', press);
+            btn.addEventListener('mouseup', release);
+            btn.addEventListener('mouseleave', release);
+        });
+
+        function updatePhysics() {
+            if (window.isTyping) return; // No movement while chatting
+
+            let dx = 0;
+            let dy = 0;
+
+            if (keys['ArrowUp'] || keys['w']) dy -= SPEED;
+            if (keys['ArrowDown'] || keys['s']) dy += SPEED;
+            if (keys['ArrowLeft'] || keys['a']) dx -= SPEED;
+            if (keys['ArrowRight'] || keys['d']) dx += SPEED;
+
+            if (dx !== 0 && dy !== 0) {
+                dx *= 0.707;
+                dy *= 0.707;
+            }
+
+            localPlayer.x += dx;
+            localPlayer.y += dy;
+
+            // Simple cafe boundaries (keep them on the rug/floor area mostly)
+            // Left/Right bounds
+            localPlayer.x = Math.max(20, Math.min(CANVAS_WIDTH - PLAYER_SIZE - 20, localPlayer.x));
+            // Top bounds (barista counter) / Bottom bounds
+            localPlayer.y = Math.max(120, Math.min(CANVAS_HEIGHT - PLAYER_SIZE - 20, localPlayer.y));
+        }
+
+        // Helper for rounded rectangles (if browser support is an issue, but ctx.roundRect is standard now)
+        function drawCafeEnvironment() {
+            // Background Floor
+            ctx.fillStyle = '#dcb897';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // Floorboards
+            ctx.strokeStyle = '#c49e7b';
+            ctx.lineWidth = 2;
+            for(let i=0; i<CANVAS_WIDTH; i+=40) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, CANVAS_HEIGHT);
+                ctx.stroke();
+            }
+
+            // Top Wall & Counter
+            ctx.fillStyle = '#6a5a65'; // Wall
+            ctx.fillRect(0, 0, CANVAS_WIDTH, 80);
+            
+            // Plants on counter
+            ctx.fillStyle = '#506e5e';
+            ctx.fillRect(50, 40, 30, 40);
+            ctx.fillRect(720, 40, 30, 40);
+            ctx.fillStyle = '#8fb3a0';
+            ctx.beginPath(); ctx.arc(65, 30, 20, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(735, 30, 20, 0, Math.PI*2); ctx.fill();
+
+            // Main Bar Counter
+            ctx.fillStyle = '#8c5d4b';
+            ctx.fillRect(0, 80, CANVAS_WIDTH, 50);
+            ctx.fillStyle = '#b67d65'; // Counter top highlight
+            ctx.fillRect(0, 80, CANVAS_WIDTH, 15);
+
+            // Center Cozy Rug
+            ctx.fillStyle = '#c47272';
+            ctx.beginPath();
+            if(ctx.roundRect) {
+                ctx.roundRect(150, 200, 500, 300, 20);
+            } else {
+                ctx.fillRect(150, 200, 500, 300);
+            }
+            ctx.fill();
+            
+            // Rug Fringe
+            ctx.strokeStyle = '#e8b19a';
+            ctx.lineWidth = 4;
+            ctx.setLineDash([8, 8]);
+            ctx.strokeRect(154, 204, 492, 292);
+            ctx.setLineDash([]);
+
+            // Coffee Tables
+            const tables = [[250, 350], [550, 350], [400, 250], [400, 450]];
+            tables.forEach(t => {
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                ctx.beginPath(); ctx.arc(t[0], t[1] + 10, 40, 0, Math.PI*2); ctx.fill();
+                // Wood
+                ctx.fillStyle = '#5d4037';
+                ctx.beginPath(); ctx.arc(t[0], t[1], 45, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#795548';
+                ctx.beginPath(); ctx.arc(t[0], t[1] - 5, 45, 0, Math.PI*2); ctx.fill();
+                
+                // Little coffee cup
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(t[0] - 5, t[1] - 15, 10, 12);
+            });
+        }
+
+        function drawChatBubble(x, y, text) {
+            ctx.font = '18px "VT323", monospace';
+            const padding = 10;
+            const textWidth = ctx.measureText(text).width;
+            const bubbleWidth = textWidth + padding * 2;
+            const bubbleHeight = 32;
+            
+            // Position bubble above the player, centered
+            const bubbleX = x + (PLAYER_SIZE/2) - (bubbleWidth/2);
+            const bubbleY = y - bubbleHeight - 15;
+
+            // Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.15)';
+            ctx.beginPath();
+            if(ctx.roundRect) {
+                ctx.roundRect(bubbleX + 2, bubbleY + 2, bubbleWidth, bubbleHeight, 8);
+            } else {
+                ctx.fillRect(bubbleX + 2, bubbleY + 2, bubbleWidth, bubbleHeight);
+            }
+            ctx.fill();
+
+            // Bubble background
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            if(ctx.roundRect) {
+                ctx.roundRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight, 8);
+            } else {
+                ctx.fillRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight);
+            }
+            ctx.fill();
+            
+            // Bubble border
+            ctx.strokeStyle = '#4a3e47';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Pointer down to player
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.moveTo(x + PLAYER_SIZE/2 - 6, bubbleY + bubbleHeight - 2);
+            ctx.lineTo(x + PLAYER_SIZE/2 + 6, bubbleY + bubbleHeight - 2);
+            ctx.lineTo(x + PLAYER_SIZE/2, bubbleY + bubbleHeight + 8);
+            ctx.fill();
+            
+            // Pointer border lines
+            ctx.beginPath();
+            ctx.moveTo(x + PLAYER_SIZE/2 - 6, bubbleY + bubbleHeight);
+            ctx.lineTo(x + PLAYER_SIZE/2, bubbleY + bubbleHeight + 8);
+            ctx.lineTo(x + PLAYER_SIZE/2 + 6, bubbleY + bubbleHeight);
+            ctx.stroke();
+
+            // Text
+            ctx.fillStyle = '#2c272e';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, bubbleX + bubbleWidth/2, bubbleY + bubbleHeight/2 + 2);
+            
+            // Reset alignment for other drawings
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
+        }
+
+        function drawPlayers() {
+            const now = Date.now();
+
+            if (gameState.players) {
+                for (const [uid, p] of Object.entries(gameState.players)) {
+                    // Ignore players inactive for > 15 seconds
+                    if (now - p.lastSeen > 15000) continue;
+
+                    const isMe = (uid === currentUser.uid);
+                    // Smooth local rendering to avoid input lag feel
+                    const drawX = isMe ? localPlayer.x : p.x;
+                    const drawY = isMe ? localPlayer.y : p.y;
+                    const color = isMe ? localPlayer.color : (p.color || '#ffb3ba');
+
+                    // Player Shadow
+                    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                    ctx.beginPath();
+                    ctx.ellipse(drawX + PLAYER_SIZE/2, drawY + PLAYER_SIZE, PLAYER_SIZE/2, 8, 0, 0, Math.PI*2);
+                    ctx.fill();
+
+                    // Player Body
+                    ctx.fillStyle = color;
+                    if(ctx.roundRect) {
+                        ctx.beginPath();
+                        ctx.roundRect(drawX, drawY, PLAYER_SIZE, PLAYER_SIZE, 6);
+                        ctx.fill();
+                    } else {
+                        ctx.fillRect(drawX, drawY, PLAYER_SIZE, PLAYER_SIZE);
+                    }
+                    
+                    // Cute face (eyes and blush)
+                    ctx.fillStyle = '#2c272e'; // Eyes
+                    ctx.fillRect(drawX + 8, drawY + 12, 4, 6);
+                    ctx.fillRect(drawX + PLAYER_SIZE - 12, drawY + 12, 4, 6);
+                    
+                    ctx.fillStyle = 'rgba(255,100,100,0.4)'; // Blush
+                    ctx.fillRect(drawX + 4, drawY + 18, 6, 4);
+                    ctx.fillRect(drawX + PLAYER_SIZE - 10, drawY + 18, 6, 4);
+
+                    // Highlight self outline
+                    if (isMe) {
+                        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+                        ctx.lineWidth = 2;
+                        if(ctx.roundRect) {
+                            ctx.beginPath();
+                            ctx.roundRect(drawX - 2, drawY - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4, 8);
+                            ctx.stroke();
+                        } else {
+                            ctx.strokeRect(drawX - 2, drawY - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4);
+                        }
+                    }
+
+                    // Draw Chat Bubble (Visible for 6 seconds)
+                    const msg = isMe ? localPlayer.msg : p.msg;
+                    const msgTime = isMe ? localPlayer.msgTime : p.msgTime;
+                    
+                    if (msg && msgTime && (now - msgTime < 6000)) {
+                        drawChatBubble(drawX, drawY, msg);
+                    }
+                }
+            }
+        }
+
+        function drawGame() {
+            // Resize canvas context internally to maintain aspect ratio
+            const displayWidth = canvas.clientWidth;
+            const displayHeight = canvas.clientHeight;
+            if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+                // In a perfect world we'd resize, but keeping fixed internal resolution 
+                // and scaling via CSS is better for retro pixel art consistency.
+                // The CSS `object-fit: cover` and `w-full h-full` handles this visually.
+            }
+
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            drawCafeEnvironment();
+            drawPlayers();
+        }
+
+        function startGameLoop() {
+            function loop() {
+                updatePhysics();
+                drawGame();
+                gameLoopId = requestAnimationFrame(loop);
+            }
+            loop();
+        }
+
+        function startNetworkSync() {
+            // Push local position & activity ping to Firestore periodically
+            networkSyncId = setInterval(() => {
+                if (!currentRoom || !currentUser) return;
+                
+                const roomRef = getRoomRef(currentRoom);
+                localPlayer.lastSeen = Date.now();
+
+                // Fire & forget update
+                updateDoc(roomRef, {
+                    [`players.${currentUser.uid}.x`]: localPlayer.x,
+                    [`players.${currentUser.uid}.y`]: localPlayer.y,
+                    [`players.${currentUser.uid}.lastSeen`]: localPlayer.lastSeen
+                }).catch(e => {
+                    // Suppress harmless transient network errors in console
+                });
+
+            }, 100); // 10 ticks per second is generally safe for small firebase lobbies
+        }
+
+    </script>
+</body>
+</html>
