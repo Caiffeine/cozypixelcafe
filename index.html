@@ -363,8 +363,7 @@
         }
 
         function getRoomRef(roomCode) {
-            // Strict path rule enforcement
-            return doc(db, 'artifacts', window.appId, 'public', 'data', 'cafe_rooms', roomCode);
+            return doc(db, 'rooms', roomCode);
         }
 
         function initColorPicker() {
@@ -837,6 +836,7 @@
         window.addEventListener('keydown', (e) => {
             if (window.isTyping) return; // Ignore movement keys if typing
             
+            if (!e.key) return;
             if (keys.hasOwnProperty(e.key) || keys.hasOwnProperty(e.key.toLowerCase())) {
                 keys[e.key] = true;
                 keys[e.key.toLowerCase()] = true;
@@ -855,6 +855,7 @@
         });
 
         window.addEventListener('keyup', (e) => {
+            if (!e.key) return;
             if (keys.hasOwnProperty(e.key) || keys.hasOwnProperty(e.key.toLowerCase())) {
                 keys[e.key] = false;
                 keys[e.key.toLowerCase()] = false;
