@@ -108,48 +108,65 @@
             transition: opacity 0.3s, transform 0.3s;
             pointer-events: none;
             font-size: 1.2rem;
+            top: calc(2rem + env(safe-area-inset-top));
         }
+
+        /* Mobile Viewport & Safe Areas */
+        body {
+            height: 100vh; /* Fallback for older browsers */
+            height: 100dvh; /* Dynamic viewport height to account for mobile browser UI */
+            width: 100vw;
+            overflow: hidden; /* Prevents pull-to-refresh and bounce */
+        }
+
+        #menu-ui, #game-ui {
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+        }
+
     </style>
 </head>
-<body class="scanlines h-screen w-screen flex flex-col items-center justify-center relative">
+<body class="scanlines flex flex-col items-center justify-center relative bg-[#2c272e]">
 
     <!-- Toast Notification -->
-    <div id="toast" class="absolute top-8 left-1/2 transform -translate-x-1/2 -translate-y-4 opacity-0 bg-white text-[#2c272e] px-6 py-2 rounded-xl shadow-lg z-50 border-4 border-[#d89f87]">
+    <div id="toast" class="absolute left-1/2 transform -translate-x-1/2 -translate-y-4 opacity-0 bg-white text-[#2c272e] px-6 py-2 rounded-xl shadow-lg z-50 border-4 border-[#d89f87]">
         Notification
     </div>
 
     <!-- Main Menu UI -->
-    <div id="menu-ui" class="absolute inset-0 flex flex-col items-center justify-center z-40 bg-[#2c272e]/90 backdrop-blur-sm">
-        <div class="bg-[#4a3e47] p-8 rounded-2xl border-4 border-[#6a5a65] max-w-md w-full mx-4 shadow-2xl flex flex-col items-center">
-            <h1 class="text-5xl md:text-6xl text-center text-[#d89f87] mb-2 drop-shadow-md">
+    <div id="menu-ui" class="absolute inset-0 flex flex-col items-center justify-center z-40 bg-[#2c272e]/90 backdrop-blur-sm overflow-y-auto py-4">
+        <div class="bg-[#4a3e47] p-6 md:p-8 rounded-2xl border-4 border-[#6a5a65] max-w-md w-full mx-4 shadow-2xl flex flex-col items-center my-auto">
+            <h1 class="text-4xl md:text-6xl text-center text-[#d89f87] mb-2 drop-shadow-md">
                 Cozy Cafe
             </h1>
-            <p class="text-[#a89f91] mb-6 text-center text-xl">A little pixel lobby to chat with friends.</p>
+            <p class="text-[#a89f91] mb-4 md:mb-6 text-center text-lg md:text-xl">A little pixel lobby to chat with friends.</p>
             
-            <div id="loading-indicator" class="text-[#d89f87] animate-pulse text-2xl mb-4">Brewing connection...</div>
+            <div id="loading-indicator" class="text-[#d89f87] animate-pulse text-xl md:text-2xl mb-4">Brewing connection...</div>
 
-            <div id="menu-controls" class="hidden flex-col items-center space-y-4 w-full">
+            <div id="menu-controls" class="hidden flex-col items-center space-y-3 md:space-y-4 w-full">
                 
                 <!-- Character Preview -->
-                <div class="flex flex-col items-center justify-center bg-[#2c272e] border-4 border-[#6a5a65] rounded-xl p-3 w-full">
+                <div class="flex flex-col items-center justify-center bg-[#2c272e] border-4 border-[#6a5a65] rounded-xl p-2 md:p-3 w-full">
                     <canvas id="previewCanvas" width="64" height="64" class="block" style="image-rendering: pixelated;"></canvas>
                     <div id="color-picker" class="flex gap-2 mt-2 flex-wrap justify-center">
                         <!-- Colors inserted via JS -->
                     </div>
                 </div>
 
-                <input type="text" id="username-input" placeholder="ENTER USERNAME" maxlength="12" class="cafe-input w-full p-3 text-center text-2xl uppercase">
-                <button id="btn-create-room" onclick="createRoom()" class="cafe-btn w-full py-3">Open a New Table</button>
+                <input type="text" id="username-input" placeholder="ENTER USERNAME" maxlength="12" class="cafe-input w-full p-2 md:p-3 text-center text-xl md:text-2xl uppercase">
+                <button id="btn-create-room" onclick="createRoom()" class="cafe-btn w-full py-2 md:py-3 text-lg md:text-xl">Open a New Table</button>
                 
-                <div class="flex items-center w-full space-x-4 py-2">
+                <div class="flex items-center w-full space-x-4 py-1 md:py-2">
                     <div class="h-1 bg-[#6a5a65] flex-1 rounded"></div>
-                    <span class="text-xl text-[#a89f91]">OR</span>
+                    <span class="text-lg md:text-xl text-[#a89f91]">OR</span>
                     <div class="h-1 bg-[#6a5a65] flex-1 rounded"></div>
                 </div>
 
-                <div class="w-full flex flex-col space-y-3">
-                    <input type="text" id="join-code" placeholder="ENTER 4-LETTER CODE" maxlength="4" class="cafe-input w-full p-3 text-center text-2xl uppercase">
-                    <button id="btn-join-room" onclick="joinRoomFromInput()" class="cafe-btn w-full py-3 bg-[#8fb3a0] border-[#6b8c7a] shadow-[0_4px_0_#506e5e]">Join Friends</button>
+                <div class="w-full flex flex-col space-y-2 md:space-y-3">
+                    <input type="text" id="join-code" placeholder="ENTER 4-LETTER CODE" maxlength="4" class="cafe-input w-full p-2 md:p-3 text-center text-xl md:text-2xl uppercase">
+                    <button id="btn-join-room" onclick="joinRoomFromInput()" class="cafe-btn w-full py-2 md:py-3 text-lg md:text-xl bg-[#8fb3a0] border-[#6b8c7a] shadow-[0_4px_0_#506e5e]">Join Friends</button>
                 </div>
             </div>
         </div>
@@ -159,30 +176,31 @@
     <div id="game-ui" class="hidden absolute inset-0 flex-col z-30 pointer-events-none">
         
         <!-- Top Bar -->
-        <div class="flex justify-between items-start p-4 w-full pointer-events-auto">
-            <div class="bg-[#4a3e47]/90 border-4 border-[#6a5a65] p-3 rounded-xl shadow-lg flex flex-col gap-2">
-                <div class="text-[#a89f91] text-xl">Room Code: <span id="display-room-code" class="text-white font-bold text-2xl">----</span></div>
-                <button onclick="copyInviteLink()" class="cafe-btn px-3 py-1 text-lg" style="box-shadow: 0 2px 0 #8c5d4b;">Copy Link</button>
+        <div class="flex justify-between items-start p-2 md:p-4 w-full pointer-events-auto">
+            <div class="bg-[#4a3e47]/90 border-4 border-[#6a5a65] p-2 md:p-3 rounded-xl shadow-lg flex flex-col gap-1 md:gap-2">
+                <div class="text-[#a89f91] text-base md:text-xl">Room Code: <span id="display-room-code" class="text-white font-bold text-lg md:text-2xl">----</span></div>
+                <button onclick="copyInviteLink()" class="cafe-btn px-2 py-1 md:px-3 md:py-1 text-sm md:text-lg" style="box-shadow: 0 2px 0 #8c5d4b;">Copy Link</button>
             </div>
             
-            <!-- Online Counter -->
-            <div class="bg-[#4a3e47]/90 border-4 border-[#6a5a65] p-3 rounded-xl shadow-lg text-xl flex items-center gap-2">
-                <div class="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                <span id="online-count" class="text-white">1 Online</span>
+            <div class="flex flex-col gap-2 items-end">
+                <!-- Online Counter -->
+                <div class="bg-[#4a3e47]/90 border-4 border-[#6a5a65] p-2 md:p-3 rounded-xl shadow-lg text-base md:text-xl flex items-center gap-2">
+                    <div class="w-2 h-2 md:w-3 md:h-3 bg-green-400 rounded-full animate-pulse"></div>
+                    <span id="online-count" class="text-white">1 Online</span>
+                </div>
+                <!-- Leave Button -->
+                <button id="leave-room-btn" onclick="leaveRoom()" class="pointer-events-auto cafe-btn bg-[#c47272] border-[#9a5454] px-3 py-1 md:px-4 md:py-2 text-sm md:text-xl" style="box-shadow: 0 4px 0 #7a3c3c;">Leave</button>
             </div>
         </div>
-
-        <!-- Desktop Leave Button -->
-        <button id="desktop-leave" onclick="leaveRoom()" class="hidden md:block absolute top-4 right-40 pointer-events-auto cafe-btn bg-[#c47272] border-[#9a5454] px-4 py-2 text-xl" style="box-shadow: 0 4px 0 #7a3c3c;">Leave</button>
         
         <!-- Floating Controls (Mobile & Desktop) -->
         <div id="floating-controls" class="absolute bottom-4 left-4 right-4 pointer-events-none flex flex-col items-end justify-end gap-3" style="z-index:40;">
             
             <!-- Chat Form (Floating) -->
-            <div id="chat-bar" class="hidden pointer-events-auto bg-[#4a3e47]/90 border-4 border-[#6a5a65] p-2 rounded-xl shadow-lg w-full max-w-sm mb-2" style="backdrop-filter: blur(4px);">
+            <div id="chat-bar" class="hidden pointer-events-auto bg-[#4a3e47]/90 border-4 border-[#6a5a65] p-2 rounded-xl shadow-lg w-full max-w-sm mb-1 md:mb-2" style="backdrop-filter: blur(4px);">
                 <form onsubmit="handleChatSubmit(event)" class="flex w-full gap-2">
-                    <input type="text" id="chat-input" placeholder="Say something nice..." maxlength="50" autocomplete="off" class="cafe-input flex-1 p-2 text-xl" onfocus="window.isTyping = true" onblur="window.isTyping = false">
-                    <button type="submit" class="cafe-btn px-4 py-1 text-xl">Chat</button>
+                    <input type="text" id="chat-input" placeholder="Say something nice..." maxlength="50" autocomplete="off" class="cafe-input flex-1 p-2 text-base md:text-xl" onfocus="window.isTyping = true" onblur="window.isTyping = false">
+                    <button type="submit" class="cafe-btn px-3 py-1 md:px-4 md:py-1 text-base md:text-xl">Chat</button>
                 </form>
             </div>
 
