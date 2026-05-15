@@ -561,18 +561,21 @@
                                     if (!gameState.players[uid]) {
                                         gameState.players[uid] = data.players[uid];
                                     } else {
-                                        // Update lastSeen fallback from Firestore
                                         gameState.players[uid].lastSeen = data.players[uid].lastSeen;
                                     }
                                     
-                                    // WebRTC Handshake Initiation
-                                    if (!peerConnections[uid] && currentUser.uid > uid) {
-                                        initiateConnection(uid, code);
+                                    // The player with higher UID initiates the WebRTC connection
+                                    if (!peerConnections[uid] && !dataChannels[uid]) {
+                                        if (currentUser.uid > uid) {
+                                            console.log(`[WebRTC] I (${currentUser.uid.slice(0,6)}) am caller, initiating to ${uid.slice(0,6)}`);
+                                            initiateConnection(uid, code);
+                                        } else {
+                                            console.log(`[WebRTC] I (${currentUser.uid.slice(0,6)}) am receiver, waiting for offer from ${uid.slice(0,6)}`);
+                                        }
                                     }
                                 }
                             }
                             
-                            // Remove disconnected players
                             const now = Date.now();
                             for (const uid in gameState.players) {
                                 if (uid !== currentUser.uid) {
@@ -1204,6 +1207,7 @@
                 snapshot.docChanges().forEach((change) => {
                     if (change.type === 'added') {
                         const signal = change.doc.data();
+                        console.log(`[WebRTC] Received signal: type=${signal.type} from=${signal.from.slice(0,6)}`);
                         handleSignal(signal, change.doc.id, code);
                     }
                 });
@@ -1267,27 +1271,39 @@
             };
 
             pc.ondatachannel = (event) => {
+                console.log(`[WebRTC] Received data channel from ${targetUid.slice(0,6)}`);
                 setupDataChannel(event.channel, targetUid);
             };
 
-            if (currentUser.uid > targetUid) {
-                const channel = pc.createDataChannel('gameData', { negotiated: false });
-                setupDataChannel(channel, targetUid);
-            }
-
             pc.oniceconnectionstatechange = () => {
+                console.log(`[WebRTC] ICE state with ${targetUid.slice(0,6)}: ${pc.iceConnectionState}`);
                 if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
                     closeConnection(targetUid);
                 }
             };
+
+            pc.onconnectionstatechange = () => {
+                console.log(`[WebRTC] Connection state with ${targetUid.slice(0,6)}: ${pc.connectionState}`);
+            };
+
             return pc;
         }
 
         async function initiateConnection(targetUid, code) {
-            if (peerConnections[targetUid]) return;
+            if (peerConnections[targetUid]) {
+                console.log(`[WebRTC] Already have PC for ${targetUid.slice(0,6)}, skipping`);
+                return;
+            }
+            console.log(`[WebRTC] Creating offer for ${targetUid.slice(0,6)}`);
             const pc = createPeerConnection(targetUid, code);
+            
+            // Only the caller creates the data channel
+            const channel = pc.createDataChannel('gameData');
+            setupDataChannel(channel, targetUid);
+            
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
+            console.log(`[WebRTC] Sending offer to ${targetUid.slice(0,6)}`);
             sendSignal(targetUid, 'offer', offer, code);
         }
 
@@ -1306,11 +1322,19 @@
             dataChannels[targetUid] = channel;
             
             channel.onopen = () => {
-                console.log(`WebRTC Data Channel opened with ${targetUid}`);
+                console.log(`[WebRTC] ✅ Data Channel OPEN with ${targetUid.slice(0,6)}`);
                 updateConnStatus('connected');
+                showToast('P2P connected!');
             };
 
-            channel.onclose = () => closeConnection(targetUid);
+            channel.onerror = (e) => {
+                console.error(`[WebRTC] Data Channel ERROR with ${targetUid.slice(0,6)}:`, e);
+            };
+
+            channel.onclose = () => {
+                console.log(`[WebRTC] Data Channel CLOSED with ${targetUid.slice(0,6)}`);
+                closeConnection(targetUid);
+            };
 
             channel.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
