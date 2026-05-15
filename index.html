@@ -668,8 +668,20 @@
             if (networkSyncId) clearInterval(networkSyncId);
             
             // Remove from RTDB and detach listener
-            if (rtdbMyRef) rtdbRemove(rtdbMyRef).catch(e => {});
             if (rtdbPlayersRef) off(rtdbPlayersRef);
+            if (rtdbMyRef && code) {
+                try {
+                    await rtdbRemove(rtdbMyRef);
+                    // Check if room is now empty, and clean it up
+                    const roomRtdbRef = rtdbRef(rtdb, `rooms/${code}`);
+                    const { val } = await new Promise(resolve => {
+                        onValue(roomRtdbRef, snap => resolve({ val: snap.val() }), { onlyOnce: true });
+                    });
+                    if (!val || !val.players || Object.keys(val.players).length === 0) {
+                        await rtdbRemove(roomRtdbRef);
+                    }
+                } catch(e) {}
+            }
             rtdbPlayersRef = null;
             rtdbMyRef = null;
 
