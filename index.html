@@ -715,8 +715,17 @@
         window.leaveRoom = async () => {
             const code = currentRoom;
             if (unsubscribeRoom) unsubscribeRoom();
-            if (gameLoopId) cancelAnimationFrame(gameLoopId);
-            if (networkSyncId) clearInterval(networkSyncId);
+            if (gameLoopId) {
+                cancelAnimationFrame(gameLoopId);
+                gameLoopId = null;
+            }
+            if (networkSyncId) {
+                clearInterval(networkSyncId);
+                networkSyncId = null;
+            }
+            if (ctx && canvas) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
             
             // Remove from RTDB and detach listener
             if (rtdbPlayersRef) off(rtdbPlayersRef);
