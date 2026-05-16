@@ -999,7 +999,7 @@
             // Left/Right bounds
             localPlayer.x = Math.max(20, Math.min(CANVAS_WIDTH - PLAYER_SIZE - 20, localPlayer.x));
             // Top bounds (barista counter) / Bottom bounds
-            localPlayer.y = Math.max(120, Math.min(CANVAS_HEIGHT - PLAYER_SIZE - 20, localPlayer.y));
+            localPlayer.y = Math.max(100, Math.min(CANVAS_HEIGHT - PLAYER_SIZE - 20, localPlayer.y));
 
             // Interaction Proximity
             let newNearest = null;
@@ -1008,16 +1008,9 @@
             const py = localPlayer.y + PLAYER_SIZE / 2;
 
             INTERACTABLES.forEach(obj => {
-                let dist = 999;
-                if (obj.type === 'chair' || obj.type === 'machine') {
-                    const cx = obj.x + obj.w / 2;
-                    const cy = obj.y + obj.h / 2;
-                    dist = Math.hypot(px - cx, py - cy);
-                } else if (obj.type === 'rug') {
-                    if (px > obj.x && px < obj.x + obj.w && py > obj.y && py < obj.y + obj.h) {
-                        dist = 0; // Automatic range
-                    }
-                }
+                const cx = obj.x + obj.w / 2;
+                const cy = obj.y + obj.h / 2;
+                const dist = Math.hypot(px - cx, py - cy);
                 
                 if (dist < minDist) {
                     minDist = dist;
@@ -1043,8 +1036,15 @@
 
         window.handleInteract = function() {
             if (!nearestInteractable) return;
-            if (nearestInteractable.type === 'chair' || nearestInteractable.type === 'rug') {
+            if (nearestInteractable.type === 'chair') {
                 localPlayer.isSitting = !localPlayer.isSitting;
+                if (localPlayer.isSitting) {
+                    // Snap player to chair center
+                    localPlayer.x = nearestInteractable.x + nearestInteractable.w / 2 - PLAYER_SIZE / 2;
+                    localPlayer.y = nearestInteractable.y + nearestInteractable.h / 2 - PLAYER_SIZE / 2;
+                    localPlayer.vx = 0;
+                    localPlayer.vy = 0;
+                }
             } else if (nearestInteractable.type === 'machine') {
                 localPlayer.heldItem = 'coffee';
             }
@@ -1082,8 +1082,7 @@
         }
 
         const INTERACTABLES = [
-            { id: 'machine', type: 'machine', x: 350, y: 30, w: 60, h: 80 },
-            { id: 'rug', type: 'rug', x: 150, y: 200, w: 500, h: 300 }
+            { id: 'machine', type: 'machine', x: 350, y: 70, w: 60, h: 60 }
         ];
         const tables = [[250, 350], [550, 350], [400, 250], [400, 450]];
         tables.forEach((t, i) => {
@@ -1130,37 +1129,88 @@
 
             // Retro Coffee Vending Machine
             const mx = 350, my = 15;
-            // Left half (Yellow)
+            const now = Date.now();
+
+            // Glow when player is near
+            if (nearestInteractable && nearestInteractable.type === 'machine') {
+                ctx.fillStyle = 'rgba(220, 180, 100, ' + (0.15 + Math.sin(now * 0.005) * 0.1) + ')';
+                ctx.beginPath();
+                ctx.arc(mx + 30, my + 50, 55, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Machine body shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.fillRect(mx + 3, my + 5, 60, 80);
+
+            // Left half (Yellow/Tan)
             ctx.fillStyle = '#dcb464';
             ctx.fillRect(mx, my, 30, 80);
             // Right half (Brown)
             ctx.fillStyle = '#5c4033';
             ctx.fillRect(mx + 30, my, 30, 80);
-            
-            // Sign "COFFEE"
+
+            // Top border trim
+            ctx.fillStyle = '#a88a4a';
+            ctx.fillRect(mx, my, 60, 4);
+
+            // Sign "COFFEE" with backlight
             ctx.fillStyle = '#f5e4c3';
-            ctx.fillRect(mx + 5, my + 5, 50, 15);
+            ctx.fillRect(mx + 5, my + 6, 50, 16);
             ctx.fillStyle = '#2c272e';
-            ctx.font = '10px "VT323", monospace';
-            ctx.fillText("COFFEE", mx + 10, my + 15);
+            ctx.font = '11px "VT323", monospace';
+            ctx.fillText("COFFEE", mx + 10, my + 18);
 
-            // Dispenser Area
-            ctx.fillStyle = '#3e2a22';
-            ctx.fillRect(mx + 8, my + 30, 14, 20);
-            ctx.fillStyle = '#fff'; // Tiny cup inside
-            ctx.fillRect(mx + 11, my + 42, 8, 8);
-
-            // Buttons / Keypad
-            ctx.fillStyle = '#2c272e';
-            ctx.fillRect(mx + 35, my + 30, 20, 20);
+            // Dispenser Area (dark alcove)
+            ctx.fillStyle = '#1a1215';
+            ctx.fillRect(mx + 6, my + 28, 18, 24);
+            // Nozzle
+            ctx.fillStyle = '#888';
+            ctx.fillRect(mx + 12, my + 28, 6, 4);
+            // Tiny cup
             ctx.fillStyle = '#fff';
-            ctx.fillRect(mx + 37, my + 32, 4, 4);
-            ctx.fillRect(mx + 43, my + 32, 4, 4);
-            ctx.fillRect(mx + 49, my + 32, 4, 4);
-            
-            // Bottom vent / details
+            ctx.fillRect(mx + 10, my + 44, 10, 8);
+            // Coffee drip animation
+            const dripY = (now % 1200) / 1200 * 12;
+            ctx.fillStyle = '#5c3a1e';
+            ctx.fillRect(mx + 14, my + 32 + dripY, 2, 4);
+
+            // Buttons / Keypad panel
+            ctx.fillStyle = '#1a1215';
+            ctx.fillRect(mx + 34, my + 28, 22, 24);
+            // Lit button (blinks)
+            const btnBlink = Math.sin(now * 0.003) > 0;
+            ctx.fillStyle = btnBlink ? '#4caf50' : '#2e7d32';
+            ctx.fillRect(mx + 37, my + 32, 6, 6);
+            ctx.fillStyle = '#ff5722';
+            ctx.fillRect(mx + 46, my + 32, 6, 6);
+            // Number pad dots
+            ctx.fillStyle = '#aaa';
+            ctx.fillRect(mx + 37, my + 42, 4, 4);
+            ctx.fillRect(mx + 43, my + 42, 4, 4);
+            ctx.fillRect(mx + 49, my + 42, 4, 4);
+
+            // Bottom vent / grill
             ctx.fillStyle = '#2c272e';
             ctx.fillRect(mx, my + 75, 60, 5);
+            ctx.fillStyle = '#444';
+            for (let v = 0; v < 5; v++) {
+                ctx.fillRect(mx + 5 + v * 12, my + 76, 8, 2);
+            }
+
+            // Animated Steam rising from machine
+            ctx.globalAlpha = 0.3;
+            ctx.fillStyle = '#fff';
+            for (let s = 0; s < 3; s++) {
+                const steamX = mx + 12 + s * 8;
+                const steamBaseY = my - 2;
+                const steamOffset = Math.sin(now * 0.004 + s * 2) * 3;
+                const steamRise = (now * 0.02 + s * 50) % 20;
+                ctx.beginPath();
+                ctx.arc(steamX + steamOffset, steamBaseY - steamRise, 3 - steamRise * 0.1, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1.0;
 
             // Center Cozy Rug
             ctx.fillStyle = '#c47272';
@@ -1180,20 +1230,32 @@
             ctx.setLineDash([]);
 
             // Coffee Tables & Chairs
-            tables.forEach(t => {
+            tables.forEach((t, tableIdx) => {
                 // Chairs (Left and Right)
-                const drawChair = (cx, cy) => {
+                const drawChair = (cx, cy, chairId) => {
+                    const isHighlighted = nearestInteractable && nearestInteractable.id === chairId;
+                    // Highlight glow
+                    if (isHighlighted) {
+                        ctx.fillStyle = 'rgba(255, 220, 120, ' + (0.25 + Math.sin(Date.now() * 0.005) * 0.15) + ')';
+                        ctx.beginPath(); ctx.arc(cx + 15, cy + 15, 24, 0, Math.PI*2); ctx.fill();
+                    }
                     // Shadow
                     ctx.fillStyle = 'rgba(0,0,0,0.2)';
                     ctx.beginPath(); ctx.arc(cx + 15, cy + 20, 15, 0, Math.PI*2); ctx.fill();
                     // Cushion
-                    ctx.fillStyle = '#9e736a';
+                    ctx.fillStyle = isHighlighted ? '#c2917e' : '#9e736a';
                     ctx.fillRect(cx, cy, 30, 30);
-                    ctx.fillStyle = '#b8897f';
+                    ctx.fillStyle = isHighlighted ? '#d4a999' : '#b8897f';
                     ctx.fillRect(cx + 2, cy + 2, 26, 26);
+                    // Outline when highlighted
+                    if (isHighlighted) {
+                        ctx.strokeStyle = '#ffe082';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(cx, cy, 30, 30);
+                    }
                 };
-                drawChair(t[0] - 60, t[1] - 15); // Left Chair
-                drawChair(t[0] + 30, t[1] - 15); // Right Chair
+                drawChair(t[0] - 60, t[1] - 15, `chair_${tableIdx}_L`); // Left Chair
+                drawChair(t[0] + 30, t[1] - 15, `chair_${tableIdx}_R`); // Right Chair
 
                 // Shadow for Table
                 ctx.fillStyle = 'rgba(0,0,0,0.2)';
