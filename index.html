@@ -267,6 +267,18 @@
                             <path d="M9 2v6H7V4H5v8H3v4a6 6 0 0 0 6 6h4a6 6 0 0 0 6-6V8h-2v8h-2V6h-2v8h-2V2H9z"/>
                         </svg>
                     </button>
+                    <!-- Volume -->
+                    <div class="pointer-events-auto relative" id="volume-wrapper">
+                        <button id="btn-volume" class="cafe-btn p-2" onclick="toggleVolumeSlider()" style="border-radius: 50%; width: 56px; height: 56px;">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="#2c272e" xmlns="http://www.w3.org/2000/svg" style="image-rendering: pixelated;">
+                                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8.5v7a4.49 4.49 0 0 0 2.5-3.5zM14 3.23v2.06a7.007 7.007 0 0 1 0 13.42v2.06A9.012 9.012 0 0 0 14 3.23z"/>
+                            </svg>
+                        </button>
+                        <div id="volume-slider-container" class="hidden absolute bottom-full mb-2 right-0 bg-[#4a3e47]/95 border-4 border-[#6a5a65] rounded-xl p-3 shadow-lg" style="backdrop-filter: blur(4px); width: 160px;">
+                            <p class="text-[#a89f91] text-sm mb-1" style="font-family: 'VT323', monospace;">Volume</p>
+                            <input type="range" id="volume-slider" min="0" max="100" value="50" oninput="setMusicVolume(this.value)" style="width:100%; accent-color: #d89f87; cursor: pointer;">
+                        </div>
+                    </div>
                     <!-- Chat -->
                     <button id="floating-chat-btn" class="pointer-events-auto" onclick="toggleChat()">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="#2c272e" xmlns="http://www.w3.org/2000/svg" style="image-rendering: pixelated;">
@@ -614,6 +626,9 @@
                 window.isWelcomeOpen = true;
                 document.getElementById('welcome-dialog-overlay').classList.remove('hidden');
                 document.getElementById('welcome-dialog-overlay').classList.add('flex');
+
+                // Start background music
+                startMusic();
 
                 // Set up RTDB real-time sync for player positions
                 rtdbPlayersRef = rtdbRef(rtdb, `rooms/${code}/players`);
@@ -1004,6 +1019,43 @@
             // Top bounds (barista counter) / Bottom bounds
             localPlayer.y = Math.max(100, Math.min(CANVAS_HEIGHT - PLAYER_SIZE - 20, localPlayer.y));
 
+            // Collision with solid objects (tables, chairs, coffee machine, jukebox)
+            const playerLeft = localPlayer.x;
+            const playerRight = localPlayer.x + PLAYER_SIZE;
+            const playerTop = localPlayer.y;
+            const playerBottom = localPlayer.y + PLAYER_SIZE;
+
+            const COLLIDERS = [];
+            // Coffee machine
+            COLLIDERS.push({ x: 720, y: 160, w: 60, h: 90 });
+            // Jukebox
+            COLLIDERS.push({ x: 60, y: 160, w: 50, h: 80 });
+            // Tables (circles approximated as squares)
+            tables.forEach(t => {
+                COLLIDERS.push({ x: t[0] - 45, y: t[1] - 45, w: 90, h: 70 });
+            });
+
+            COLLIDERS.forEach(c => {
+                const overlapX = Math.min(playerRight, c.x + c.w) - Math.max(playerLeft, c.x);
+                const overlapY = Math.min(playerBottom, c.y + c.h) - Math.max(playerTop, c.y);
+                if (overlapX > 0 && overlapY > 0) {
+                    // Push player out of the collision
+                    if (overlapX < overlapY) {
+                        if (localPlayer.x + PLAYER_SIZE / 2 < c.x + c.w / 2) {
+                            localPlayer.x -= overlapX;
+                        } else {
+                            localPlayer.x += overlapX;
+                        }
+                    } else {
+                        if (localPlayer.y + PLAYER_SIZE / 2 < c.y + c.h / 2) {
+                            localPlayer.y -= overlapY;
+                        } else {
+                            localPlayer.y += overlapY;
+                        }
+                    }
+                }
+            });
+
             // Interaction Proximity
             let newNearest = null;
             let minDist = 60; // Interaction distance
@@ -1072,7 +1124,7 @@
             const btnDrink = document.getElementById('btn-drink');
             if (!btnInteract || !btnDrink) return;
 
-            if (nearestInteractable && !window.isWelcomeOpen && currentRoom) {
+            if (nearestInteractable && !window.isWelcomeOpen && currentRoom && !localPlayer.isSitting) {
                 btnInteract.classList.remove('hidden');
             } else {
                 btnInteract.classList.add('hidden');
@@ -1084,6 +1136,38 @@
                 btnDrink.classList.add('hidden');
             }
         }
+
+        // --- Music ---
+        const bgMusic = new Audio('Roll Purrsuasion.mp3');
+        bgMusic.loop = true;
+        bgMusic.volume = 0.5;
+        let musicStarted = false;
+
+        function startMusic() {
+            if (musicStarted) return;
+            musicStarted = true;
+            bgMusic.play().catch(() => {
+                // Autoplay blocked; will retry on next user interaction
+                musicStarted = false;
+            });
+        }
+
+        window.setMusicVolume = function(val) {
+            bgMusic.volume = val / 100;
+        };
+
+        window.toggleVolumeSlider = function() {
+            const container = document.getElementById('volume-slider-container');
+            container.classList.toggle('hidden');
+        };
+
+        // Close volume slider when clicking outside
+        document.addEventListener('click', (e) => {
+            const wrapper = document.getElementById('volume-wrapper');
+            if (wrapper && !wrapper.contains(e.target)) {
+                document.getElementById('volume-slider-container')?.classList.add('hidden');
+            }
+        });
 
         function spawnHeart(x, y) {
             particles.push({ x, y, life: 1.5 });
@@ -1223,11 +1307,101 @@
             }
             ctx.globalAlpha = 1.0;
 
-            // Outline highlight when near (not glow)
-            if (nearestInteractable && nearestInteractable.type === 'machine') {
+            // Outline highlight when near (not glow) - hide when sitting
+            if (nearestInteractable && nearestInteractable.type === 'machine' && !localPlayer.isSitting) {
                 ctx.strokeStyle = '#ffe082';
                 ctx.lineWidth = 2;
                 ctx.strokeRect(mx - 2, my - 4, 64, 98);
+            }
+
+            // --- Pixel Jukebox (left side) ---
+            const jx = 60, jy = 160;
+            // Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.15)';
+            ctx.fillRect(jx + 3, jy + 5, 50, 80);
+            // Body
+            ctx.fillStyle = '#c62828';
+            ctx.fillRect(jx, jy, 50, 80);
+            // Side highlight
+            ctx.fillStyle = '#e53935';
+            ctx.fillRect(jx + 2, jy + 2, 4, 76);
+            // Top dome
+            ctx.fillStyle = '#d32f2f';
+            ctx.beginPath();
+            ctx.arc(jx + 25, jy, 25, Math.PI, 0);
+            ctx.fill();
+            // Dome highlight
+            ctx.fillStyle = '#e57373';
+            ctx.beginPath();
+            ctx.arc(jx + 25, jy, 20, Math.PI + 0.3, -0.3);
+            ctx.fill();
+            // Record window
+            ctx.fillStyle = '#1a1215';
+            ctx.fillRect(jx + 8, jy + 8, 34, 28);
+            // Spinning record inside
+            ctx.fillStyle = '#222';
+            ctx.beginPath(); ctx.arc(jx + 25, jy + 22, 12, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#444';
+            ctx.beginPath(); ctx.arc(jx + 25, jy + 22, 8, 0, Math.PI * 2); ctx.fill();
+            // Record label
+            ctx.fillStyle = '#ef5350';
+            ctx.beginPath(); ctx.arc(jx + 25, jy + 22, 3, 0, Math.PI * 2); ctx.fill();
+            // Spinning line (animated)
+            const spin = (now * 0.003) % (Math.PI * 2);
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(jx + 25, jy + 22);
+            ctx.lineTo(jx + 25 + Math.cos(spin) * 10, jy + 22 + Math.sin(spin) * 10);
+            ctx.stroke();
+            // Speaker grille
+            ctx.fillStyle = '#8e2020';
+            ctx.fillRect(jx + 8, jy + 40, 34, 24);
+            ctx.fillStyle = '#6d1a1a';
+            for (let gy = 0; gy < 5; gy++) {
+                ctx.fillRect(jx + 10, jy + 42 + gy * 5, 30, 2);
+            }
+            // Buttons
+            ctx.fillStyle = '#ffd54f';
+            ctx.fillRect(jx + 10, jy + 67, 8, 6);
+            ctx.fillStyle = '#81c784';
+            ctx.fillRect(jx + 21, jy + 67, 8, 6);
+            ctx.fillStyle = '#64b5f6';
+            ctx.fillRect(jx + 32, jy + 67, 8, 6);
+            // Base
+            ctx.fillStyle = '#b71c1c';
+            ctx.fillRect(jx - 2, jy + 76, 54, 4);
+            // Legs
+            ctx.fillStyle = '#555';
+            ctx.fillRect(jx + 4, jy + 80, 6, 6);
+            ctx.fillRect(jx + 40, jy + 80, 6, 6);
+
+            // Animated music notes floating from jukebox
+            ctx.globalAlpha = 0.5;
+            const noteSymbols = ['\u266A', '\u266B'];
+            ctx.font = '14px "VT323", monospace';
+            for (let n = 0; n < 2; n++) {
+                const noteX = jx + (n === 0 ? -5 : 50) + Math.sin(now * 0.003 + n * 3) * 6;
+                const noteRise = (now * 0.02 + n * 80) % 30;
+                ctx.fillStyle = n === 0 ? '#ffa726' : '#66bb6a';
+                ctx.fillText(noteSymbols[n], noteX, jy - noteRise);
+            }
+            ctx.globalAlpha = 1.0;
+
+            // "Music by MeeperCreepertown" text when near jukebox
+            const jpx = localPlayer.x + PLAYER_SIZE / 2;
+            const jpy = localPlayer.y + PLAYER_SIZE / 2;
+            const jukeDist = Math.hypot(jpx - (jx + 25), jpy - (jy + 40));
+            if (jukeDist < 80) {
+                ctx.font = '13px "VT323", monospace';
+                const creditText = 'Music by MeeperCreepertown';
+                const creditW = ctx.measureText(creditText).width;
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.fillRect(jx + 25 - creditW / 2 - 4, jy - 42, creditW + 8, 18);
+                ctx.fillStyle = '#ffd54f';
+                ctx.textAlign = 'center';
+                ctx.fillText(creditText, jx + 25, jy - 28);
+                ctx.textAlign = 'left';
             }
 
             // Center Cozy Rug
@@ -1251,7 +1425,7 @@
             tables.forEach((t, tableIdx) => {
                 // Draw a chair with backrest
                 const drawChair = (cx, cy, chairId, side) => {
-                    const isHighlighted = nearestInteractable && nearestInteractable.id === chairId;
+                    const isHighlighted = nearestInteractable && nearestInteractable.id === chairId && !localPlayer.isSitting;
                     const cw = 35, ch = 35;
 
                     // Shadow
@@ -1609,8 +1783,8 @@
 
                     ctx.restore();
 
-                    // Floating interaction prompt for local player
-                    if (isMe && nearestInteractable && !window.isWelcomeOpen && currentRoom) {
+                    // Floating interaction prompt for local player (hide when sitting)
+                    if (isMe && nearestInteractable && !window.isWelcomeOpen && currentRoom && !localPlayer.isSitting) {
                         ctx.fillStyle = '#2c272e';
                         ctx.font = '16px "VT323", monospace';
                         const actionText = (nearestInteractable.type === 'machine') ? "[E] Coffee" : "[E] Sit";
