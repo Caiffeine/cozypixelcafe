@@ -1237,8 +1237,8 @@
         ];
         const tables = [[250, 350], [550, 350], [400, 250], [400, 450]];
         tables.forEach((t, i) => {
-            INTERACTABLES.push({ id: `chair_${i}_L`, type: 'chair', side: 'L', x: t[0] - 68, y: t[1] - 18, w: 38, h: 36 });
-            INTERACTABLES.push({ id: `chair_${i}_R`, type: 'chair', side: 'R', x: t[0] + 30, y: t[1] - 18, w: 38, h: 36 });
+            INTERACTABLES.push({ id: `chair_${i}_L`, type: 'chair', side: 'L', x: t[0] - 88, y: t[1] - 18, w: 38, h: 36 });
+            INTERACTABLES.push({ id: `chair_${i}_R`, type: 'chair', side: 'R', x: t[0] + 50, y: t[1] - 18, w: 38, h: 36 });
         });
 
         let nearestInteractable = null;
@@ -1545,8 +1545,8 @@
                         }
                     }
                 };
-                drawPillow(t[0] - 68, t[1] - 18, `chair_${tableIdx}_L`);
-                drawPillow(t[0] + 30, t[1] - 18, `chair_${tableIdx}_R`);
+                drawPillow(t[0] - 88, t[1] - 18, `chair_${tableIdx}_L`);
+                drawPillow(t[0] + 50, t[1] - 18, `chair_${tableIdx}_R`);
 
                 // Shadow for Table
                 ctx.fillStyle = 'rgba(0,0,0,0.15)';
