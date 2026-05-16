@@ -342,7 +342,8 @@
             vy: 0,
             facingDir: 'right',
             isSitting: false,
-            heldItem: null
+            heldItem: null,
+            sittingChairId: null
         };
 
         let lastActivityTime = Date.now();
@@ -634,7 +635,8 @@
                     msgTime: localPlayer.msgTime,
                     lastSeen: Date.now(),
                     isSitting: localPlayer.isSitting,
-                    heldItem: localPlayer.heldItem
+                    heldItem: localPlayer.heldItem,
+                    sittingChairId: localPlayer.sittingChairId
                 });
 
                 // Listen for ALL player position updates via RTDB WebSocket
@@ -992,6 +994,7 @@
                 lastActivityTime = Date.now();
                 if (localPlayer.isSitting) {
                     localPlayer.isSitting = false;
+                    localPlayer.sittingChairId = null;
                 }
             }
 
@@ -1039,11 +1042,16 @@
             if (nearestInteractable.type === 'chair') {
                 localPlayer.isSitting = !localPlayer.isSitting;
                 if (localPlayer.isSitting) {
-                    // Snap player to chair center
+                    localPlayer.sittingChairId = nearestInteractable.id;
+                    // Snap player to the chair seat center
                     localPlayer.x = nearestInteractable.x + nearestInteractable.w / 2 - PLAYER_SIZE / 2;
-                    localPlayer.y = nearestInteractable.y + nearestInteractable.h / 2 - PLAYER_SIZE / 2;
+                    localPlayer.y = nearestInteractable.y + nearestInteractable.h / 2 - PLAYER_SIZE / 2 - 4;
                     localPlayer.vx = 0;
                     localPlayer.vy = 0;
+                    // Face toward the table
+                    localPlayer.facingDir = nearestInteractable.side === 'L' ? 'right' : 'left';
+                } else {
+                    localPlayer.sittingChairId = null;
                 }
             } else if (nearestInteractable.type === 'machine') {
                 localPlayer.heldItem = 'coffee';
@@ -1082,12 +1090,12 @@
         }
 
         const INTERACTABLES = [
-            { id: 'machine', type: 'machine', x: 350, y: 70, w: 60, h: 60 }
+            { id: 'machine', type: 'machine', x: 720, y: 160, w: 60, h: 90 }
         ];
         const tables = [[250, 350], [550, 350], [400, 250], [400, 450]];
         tables.forEach((t, i) => {
-            INTERACTABLES.push({ id: `chair_${i}_L`, type: 'chair', x: t[0] - 60, y: t[1] - 15, w: 30, h: 30 });
-            INTERACTABLES.push({ id: `chair_${i}_R`, type: 'chair', x: t[0] + 30, y: t[1] - 15, w: 30, h: 30 });
+            INTERACTABLES.push({ id: `chair_${i}_L`, type: 'chair', side: 'L', x: t[0] - 65, y: t[1] - 18, w: 35, h: 35 });
+            INTERACTABLES.push({ id: `chair_${i}_R`, type: 'chair', side: 'R', x: t[0] + 30, y: t[1] - 18, w: 35, h: 35 });
         });
 
         let nearestInteractable = null;
@@ -1127,90 +1135,100 @@
             ctx.fillStyle = '#b67d65'; // Counter top highlight
             ctx.fillRect(0, 80, CANVAS_WIDTH, 15);
 
-            // Retro Coffee Vending Machine
-            const mx = 350, my = 15;
+            // Floor-Standing Coffee Vending Machine (right side of room)
+            const mx = 720, my = 160;
             const now = Date.now();
 
-            // Glow when player is near
-            if (nearestInteractable && nearestInteractable.type === 'machine') {
-                ctx.fillStyle = 'rgba(220, 180, 100, ' + (0.15 + Math.sin(now * 0.005) * 0.1) + ')';
-                ctx.beginPath();
-                ctx.arc(mx + 30, my + 50, 55, 0, Math.PI * 2);
-                ctx.fill();
-            }
+            // Machine shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.15)';
+            ctx.fillRect(mx + 4, my + 6, 60, 90);
 
-            // Machine body shadow
-            ctx.fillStyle = 'rgba(0,0,0,0.2)';
-            ctx.fillRect(mx + 3, my + 5, 60, 80);
-
-            // Left half (Yellow/Tan)
-            ctx.fillStyle = '#dcb464';
-            ctx.fillRect(mx, my, 30, 80);
-            // Right half (Brown)
-            ctx.fillStyle = '#5c4033';
-            ctx.fillRect(mx + 30, my, 30, 80);
-
-            // Top border trim
-            ctx.fillStyle = '#a88a4a';
-            ctx.fillRect(mx, my, 60, 4);
-
-            // Sign "COFFEE" with backlight
-            ctx.fillStyle = '#f5e4c3';
-            ctx.fillRect(mx + 5, my + 6, 50, 16);
-            ctx.fillStyle = '#2c272e';
-            ctx.font = '11px "VT323", monospace';
-            ctx.fillText("COFFEE", mx + 10, my + 18);
-
-            // Dispenser Area (dark alcove)
-            ctx.fillStyle = '#1a1215';
-            ctx.fillRect(mx + 6, my + 28, 18, 24);
-            // Nozzle
+            // Main body
+            ctx.fillStyle = '#d4d4d4';
+            ctx.fillRect(mx, my, 60, 90);
+            // Side panel (darker)
+            ctx.fillStyle = '#b0b0b0';
+            ctx.fillRect(mx + 50, my, 10, 90);
+            // Top cap
             ctx.fillStyle = '#888';
-            ctx.fillRect(mx + 12, my + 28, 6, 4);
-            // Tiny cup
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(mx + 10, my + 44, 10, 8);
-            // Coffee drip animation
-            const dripY = (now % 1200) / 1200 * 12;
-            ctx.fillStyle = '#5c3a1e';
-            ctx.fillRect(mx + 14, my + 32 + dripY, 2, 4);
+            ctx.fillRect(mx - 2, my - 4, 64, 8);
 
-            // Buttons / Keypad panel
+            // Sign panel background
+            ctx.fillStyle = '#3e2a22';
+            ctx.fillRect(mx + 4, my + 6, 44, 18);
+            // Sign text
+            ctx.fillStyle = '#f5deb3';
+            ctx.font = '12px "VT323", monospace';
+            ctx.fillText("COFFEE", mx + 8, my + 20);
+
+            // Display window (shows coffee pouring visual)
             ctx.fillStyle = '#1a1215';
-            ctx.fillRect(mx + 34, my + 28, 22, 24);
-            // Lit button (blinks)
+            ctx.fillRect(mx + 4, my + 28, 24, 28);
+            // Inner light
+            ctx.fillStyle = '#2a201a';
+            ctx.fillRect(mx + 6, my + 30, 20, 24);
+            // Nozzle
+            ctx.fillStyle = '#666';
+            ctx.fillRect(mx + 13, my + 30, 6, 3);
+            // Drip animation
+            const dripY = (now % 1500) / 1500 * 16;
+            ctx.fillStyle = '#6d4c2a';
+            ctx.fillRect(mx + 15, my + 33 + dripY, 2, 4);
+            // Cup in machine
+            ctx.fillStyle = '#f0ebe3';
+            ctx.fillRect(mx + 10, my + 48, 12, 8);
+            ctx.fillStyle = '#5c3a1e';
+            ctx.fillRect(mx + 12, my + 46, 8, 4);
+
+            // Button panel
+            ctx.fillStyle = '#555';
+            ctx.fillRect(mx + 32, my + 28, 16, 28);
+            // Buttons
             const btnBlink = Math.sin(now * 0.003) > 0;
-            ctx.fillStyle = btnBlink ? '#4caf50' : '#2e7d32';
-            ctx.fillRect(mx + 37, my + 32, 6, 6);
-            ctx.fillStyle = '#ff5722';
-            ctx.fillRect(mx + 46, my + 32, 6, 6);
-            // Number pad dots
-            ctx.fillStyle = '#aaa';
-            ctx.fillRect(mx + 37, my + 42, 4, 4);
-            ctx.fillRect(mx + 43, my + 42, 4, 4);
-            ctx.fillRect(mx + 49, my + 42, 4, 4);
+            ctx.fillStyle = btnBlink ? '#66bb6a' : '#388e3c';
+            ctx.fillRect(mx + 35, my + 32, 4, 4);
+            ctx.fillRect(mx + 41, my + 32, 4, 4);
+            ctx.fillStyle = '#ef5350';
+            ctx.fillRect(mx + 35, my + 39, 4, 4);
+            ctx.fillStyle = '#ffa726';
+            ctx.fillRect(mx + 41, my + 39, 4, 4);
+            // Coin slot
+            ctx.fillStyle = '#333';
+            ctx.fillRect(mx + 36, my + 48, 8, 3);
 
-            // Bottom vent / grill
-            ctx.fillStyle = '#2c272e';
-            ctx.fillRect(mx, my + 75, 60, 5);
-            ctx.fillStyle = '#444';
-            for (let v = 0; v < 5; v++) {
-                ctx.fillRect(mx + 5 + v * 12, my + 76, 8, 2);
+            // Bottom panel / vent
+            ctx.fillStyle = '#999';
+            ctx.fillRect(mx, my + 60, 50, 4);
+            ctx.fillStyle = '#777';
+            for (let v = 0; v < 4; v++) {
+                ctx.fillRect(mx + 4 + v * 12, my + 68, 8, 2);
+                ctx.fillRect(mx + 4 + v * 12, my + 72, 8, 2);
             }
+            // Legs
+            ctx.fillStyle = '#555';
+            ctx.fillRect(mx + 2, my + 86, 8, 4);
+            ctx.fillRect(mx + 42, my + 86, 8, 4);
 
-            // Animated Steam rising from machine
-            ctx.globalAlpha = 0.3;
+            // Steam rising
+            ctx.globalAlpha = 0.25;
             ctx.fillStyle = '#fff';
             for (let s = 0; s < 3; s++) {
-                const steamX = mx + 12 + s * 8;
-                const steamBaseY = my - 2;
-                const steamOffset = Math.sin(now * 0.004 + s * 2) * 3;
-                const steamRise = (now * 0.02 + s * 50) % 20;
+                const steamX = mx + 10 + s * 10;
+                const steamBaseY = my - 6;
+                const steamOffset = Math.sin(now * 0.003 + s * 2.5) * 4;
+                const steamRise = (now * 0.015 + s * 40) % 25;
                 ctx.beginPath();
-                ctx.arc(steamX + steamOffset, steamBaseY - steamRise, 3 - steamRise * 0.1, 0, Math.PI * 2);
+                ctx.arc(steamX + steamOffset, steamBaseY - steamRise, 4 - steamRise * 0.12, 0, Math.PI * 2);
                 ctx.fill();
             }
             ctx.globalAlpha = 1.0;
+
+            // Outline highlight when near (not glow)
+            if (nearestInteractable && nearestInteractable.type === 'machine') {
+                ctx.strokeStyle = '#ffe082';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(mx - 2, my - 4, 64, 98);
+            }
 
             // Center Cozy Rug
             ctx.fillStyle = '#c47272';
@@ -1231,44 +1249,94 @@
 
             // Coffee Tables & Chairs
             tables.forEach((t, tableIdx) => {
-                // Chairs (Left and Right)
-                const drawChair = (cx, cy, chairId) => {
+                // Draw a chair with backrest
+                const drawChair = (cx, cy, chairId, side) => {
                     const isHighlighted = nearestInteractable && nearestInteractable.id === chairId;
-                    // Highlight glow
-                    if (isHighlighted) {
-                        ctx.fillStyle = 'rgba(255, 220, 120, ' + (0.25 + Math.sin(Date.now() * 0.005) * 0.15) + ')';
-                        ctx.beginPath(); ctx.arc(cx + 15, cy + 15, 24, 0, Math.PI*2); ctx.fill();
-                    }
+                    const cw = 35, ch = 35;
+
                     // Shadow
-                    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-                    ctx.beginPath(); ctx.arc(cx + 15, cy + 20, 15, 0, Math.PI*2); ctx.fill();
-                    // Cushion
-                    ctx.fillStyle = isHighlighted ? '#c2917e' : '#9e736a';
-                    ctx.fillRect(cx, cy, 30, 30);
-                    ctx.fillStyle = isHighlighted ? '#d4a999' : '#b8897f';
-                    ctx.fillRect(cx + 2, cy + 2, 26, 26);
-                    // Outline when highlighted
+                    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+                    ctx.beginPath(); ctx.ellipse(cx + cw/2, cy + ch + 2, cw/2, 6, 0, 0, Math.PI*2); ctx.fill();
+
+                    // Chair legs (4 little legs)
+                    ctx.fillStyle = '#6d4c41';
+                    ctx.fillRect(cx + 2, cy + ch - 4, 4, 8);
+                    ctx.fillRect(cx + cw - 6, cy + ch - 4, 4, 8);
+                    ctx.fillRect(cx + 2, cy + 2, 4, 8);
+                    ctx.fillRect(cx + cw - 6, cy + 2, 4, 8);
+
+                    // Backrest (on the side away from table)
+                    ctx.fillStyle = '#5d4037';
+                    if (side === 'L') {
+                        // Backrest on left side
+                        ctx.fillRect(cx - 4, cy + 2, 6, ch - 4);
+                        ctx.fillStyle = '#795548';
+                        ctx.fillRect(cx - 3, cy + 4, 4, ch - 8);
+                    } else {
+                        // Backrest on right side
+                        ctx.fillRect(cx + cw - 2, cy + 2, 6, ch - 4);
+                        ctx.fillStyle = '#795548';
+                        ctx.fillRect(cx + cw - 1, cy + 4, 4, ch - 8);
+                    }
+
+                    // Seat base
+                    ctx.fillStyle = '#8d6e63';
+                    ctx.fillRect(cx, cy, cw, ch);
+                    // Cushion top
+                    ctx.fillStyle = isHighlighted ? '#d4a999' : '#bcaaa4';
+                    ctx.fillRect(cx + 2, cy + 2, cw - 4, ch - 4);
+                    // Cushion pattern (cross stitch)
+                    ctx.fillStyle = isHighlighted ? '#e8c4b8' : '#d7ccc8';
+                    ctx.fillRect(cx + cw/2 - 1, cy + 4, 2, ch - 8);
+                    ctx.fillRect(cx + 4, cy + ch/2 - 1, cw - 8, 2);
+
+                    // Outline highlight when near
                     if (isHighlighted) {
                         ctx.strokeStyle = '#ffe082';
                         ctx.lineWidth = 2;
-                        ctx.strokeRect(cx, cy, 30, 30);
+                        ctx.strokeRect(cx - (side === 'L' ? 4 : 0), cy, cw + 4, ch);
                     }
                 };
-                drawChair(t[0] - 60, t[1] - 15, `chair_${tableIdx}_L`); // Left Chair
-                drawChair(t[0] + 30, t[1] - 15, `chair_${tableIdx}_R`); // Right Chair
+                drawChair(t[0] - 65, t[1] - 18, `chair_${tableIdx}_L`, 'L');
+                drawChair(t[0] + 30, t[1] - 18, `chair_${tableIdx}_R`, 'R');
 
                 // Shadow for Table
-                ctx.fillStyle = 'rgba(0,0,0,0.2)';
-                ctx.beginPath(); ctx.arc(t[0], t[1] + 10, 40, 0, Math.PI*2); ctx.fill();
-                // Wood
+                ctx.fillStyle = 'rgba(0,0,0,0.15)';
+                ctx.beginPath(); ctx.ellipse(t[0], t[1] + 12, 44, 10, 0, 0, Math.PI*2); ctx.fill();
+                // Table pedestal
+                ctx.fillStyle = '#4e342e';
+                ctx.fillRect(t[0] - 6, t[1] + 2, 12, 16);
+                // Table top (wood)
                 ctx.fillStyle = '#5d4037';
                 ctx.beginPath(); ctx.arc(t[0], t[1], 45, 0, Math.PI*2); ctx.fill();
                 ctx.fillStyle = '#795548';
-                ctx.beginPath(); ctx.arc(t[0], t[1] - 5, 45, 0, Math.PI*2); ctx.fill();
-                
-                // Little coffee cup
+                ctx.beginPath(); ctx.arc(t[0], t[1] - 4, 45, 0, Math.PI*2); ctx.fill();
+                // Table surface detail (wood grain)
+                ctx.strokeStyle = '#6d4c41';
+                ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.arc(t[0], t[1] - 4, 30, 0, Math.PI*2); ctx.stroke();
+                ctx.beginPath(); ctx.arc(t[0], t[1] - 4, 15, 0, Math.PI*2); ctx.stroke();
+
+                // Table coffee cup (improved)
+                const cupX = t[0] - 8, cupY = t[1] - 18;
+                // Saucer
+                ctx.fillStyle = '#e0d6cc';
+                ctx.beginPath(); ctx.ellipse(cupX + 8, cupY + 14, 10, 4, 0, 0, Math.PI*2); ctx.fill();
+                // Cup body
+                ctx.fillStyle = '#f5f0eb';
+                ctx.fillRect(cupX + 2, cupY, 12, 14);
+                // Cup rim
                 ctx.fillStyle = '#fff';
-                ctx.fillRect(t[0] - 5, t[1] - 15, 10, 12);
+                ctx.fillRect(cupX + 2, cupY, 12, 3);
+                // Coffee inside
+                ctx.fillStyle = '#5c3a1e';
+                ctx.fillRect(cupX + 3, cupY + 3, 10, 4);
+                // Handle
+                ctx.strokeStyle = '#ddd';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(cupX + 15, cupY + 7, 4, -Math.PI/2, Math.PI/2);
+                ctx.stroke();
             });
         }
 
@@ -1422,11 +1490,12 @@
                     let bodyHeight = PLAYER_SIZE;
 
                     const currentIsSitting = isMe ? localPlayer.isSitting : p.isSitting;
+                    const currentChairId = isMe ? localPlayer.sittingChairId : p.sittingChairId;
                     if (currentIsSitting) {
-                        bounceY = 12; // Sitting down
-                        scaleY = 0.8; // Squatting
-                        scaleX = 1.1; // Squatting
-                        bodyHeight = PLAYER_SIZE - 4; // Hide legs slightly
+                        bounceY = 6; // Slightly lowered onto chair
+                        scaleY = 1;
+                        scaleX = 1;
+                        bodyHeight = PLAYER_SIZE;
                     }
 
                     const color = isMe ? localPlayer.color : (p.color || '#ffb3ba');
@@ -1514,16 +1583,28 @@
                     }
 
                     const currentHeldItem = isMe ? localPlayer.heldItem : p.heldItem;
-                    if (currentHeldItem === 'coffee') {
-                        ctx.fillStyle = '#fff';
-                        const cupX = drawX + PLAYER_SIZE/2 + faceOffsetX * 2 - 5;
-                        const cupY = bodyY + 18;
-                        ctx.fillRect(cupX, cupY, 10, 12);
-                        ctx.fillStyle = '#3e2a22';
-                        ctx.fillRect(cupX + 2, cupY - 2, 6, 4);
-                        // Hand holding it
+                    if (currentHeldItem === 'coffee' && !hideFace) {
+                        const cupSide = (currentFacingDir === 'left') ? -1 : 1;
+                        const cupX = drawX + PLAYER_SIZE/2 + cupSide * 14 - 6;
+                        const cupY = bodyY + 14;
+                        // Hand
                         ctx.fillStyle = color;
-                        ctx.fillRect(cupX - 2, cupY + 4, 4, 4);
+                        ctx.fillRect(cupX - 1, cupY + 4, 5, 5);
+                        // Cup body
+                        ctx.fillStyle = '#f5f0eb';
+                        ctx.fillRect(cupX, cupY, 12, 14);
+                        // Rim
+                        ctx.fillStyle = '#fff';
+                        ctx.fillRect(cupX, cupY, 12, 3);
+                        // Coffee inside
+                        ctx.fillStyle = '#5c3a1e';
+                        ctx.fillRect(cupX + 1, cupY + 3, 10, 4);
+                        // Handle
+                        ctx.strokeStyle = '#ddd';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.arc(cupX + 12 + cupSide, cupY + 7, 3, -Math.PI/2, Math.PI/2);
+                        ctx.stroke();
                     }
 
                     ctx.restore();
@@ -1625,7 +1706,8 @@
                     msgTime: localPlayer.msgTime || 0,
                     lastSeen: localPlayer.lastSeen,
                     isSitting: localPlayer.isSitting,
-                    heldItem: localPlayer.heldItem
+                    heldItem: localPlayer.heldItem,
+                    sittingChairId: localPlayer.sittingChairId
                 }).then(() => {
                     // Calculate ping from round-trip using EMA (Exponential Moving Average)
                     const currentPing = Date.now() - localPlayer.lastSeen;
