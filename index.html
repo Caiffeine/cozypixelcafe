@@ -686,18 +686,48 @@
                         if (uid !== currentUser.uid && !data[uid]) {
                             if (!gameState.players[uid]._leaving) {
                                 gameState.players[uid]._leaving = Date.now();
-                                // Spawn poof particles at their last position
                                 const lp = gameState.players[uid];
+                                const cx = (clientState[uid]?.currentX || lp.x) + PLAYER_SIZE / 2;
+                                const cy = (clientState[uid]?.currentY || lp.y) + PLAYER_SIZE / 2;
+                                const pColor = lp.color || '#ffb3ba';
+                                // Dissolving pixel fragments (burst outward)
+                                for (let i = 0; i < 14; i++) {
+                                    const angle = (Math.PI * 2 / 14) * i + Math.random() * 0.3;
+                                    const speed = 30 + Math.random() * 60;
+                                    particles.push({
+                                        x: cx + (Math.random() - 0.5) * 16,
+                                        y: cy + (Math.random() - 0.5) * 20,
+                                        vx: Math.cos(angle) * speed,
+                                        vy: Math.sin(angle) * speed - 15,
+                                        life: 0.5 + Math.random() * 0.5,
+                                        type: 'pixel',
+                                        color: pColor,
+                                        size: 2 + Math.random() * 3
+                                    });
+                                }
+                                // Spinning star trail (spiral outward)
                                 for (let i = 0; i < 8; i++) {
                                     const angle = (Math.PI * 2 / 8) * i;
                                     particles.push({
-                                        x: (clientState[uid]?.currentX || lp.x) + PLAYER_SIZE / 2,
-                                        y: (clientState[uid]?.currentY || lp.y) + PLAYER_SIZE / 2,
-                                        vx: Math.cos(angle) * 40,
-                                        vy: Math.sin(angle) * 40,
-                                        life: 0.6,
-                                        type: 'poof',
-                                        color: lp.color || '#ffb3ba'
+                                        x: cx, y: cy,
+                                        vx: Math.cos(angle) * 45,
+                                        vy: Math.sin(angle) * 45,
+                                        life: 0.7,
+                                        type: 'star',
+                                        color: ['#ffe082', '#ffab40', '#ff8a65', '#ce93d8'][i % 4],
+                                        spin: angle
+                                    });
+                                }
+                                // Smoke puff (slow expanding clouds)
+                                for (let i = 0; i < 5; i++) {
+                                    particles.push({
+                                        x: cx + (Math.random() - 0.5) * 10,
+                                        y: cy + (Math.random() - 0.5) * 10,
+                                        vx: (Math.random() - 0.5) * 20,
+                                        vy: -10 - Math.random() * 20,
+                                        life: 0.8 + Math.random() * 0.4,
+                                        type: 'smoke',
+                                        size: 6 + Math.random() * 4
                                     });
                                 }
                             }
@@ -705,7 +735,7 @@
                     }
                     // Actually remove players whose leave animation is done
                     for (const uid in gameState.players) {
-                        if (gameState.players[uid]._leaving && (Date.now() - gameState.players[uid]._leaving > 500)) {
+                        if (gameState.players[uid]._leaving && (Date.now() - gameState.players[uid]._leaving > 800)) {
                             delete gameState.players[uid];
                             delete clientState[uid];
                         }
@@ -1207,8 +1237,8 @@
         ];
         const tables = [[250, 350], [550, 350], [400, 250], [400, 450]];
         tables.forEach((t, i) => {
-            INTERACTABLES.push({ id: `chair_${i}_L`, type: 'chair', side: 'L', x: t[0] - 65, y: t[1] - 18, w: 35, h: 35 });
-            INTERACTABLES.push({ id: `chair_${i}_R`, type: 'chair', side: 'R', x: t[0] + 30, y: t[1] - 18, w: 35, h: 35 });
+            INTERACTABLES.push({ id: `chair_${i}_L`, type: 'chair', side: 'L', x: t[0] - 68, y: t[1] - 18, w: 38, h: 36 });
+            INTERACTABLES.push({ id: `chair_${i}_R`, type: 'chair', side: 'R', x: t[0] + 30, y: t[1] - 18, w: 38, h: 36 });
         });
 
         let nearestInteractable = null;
@@ -1450,58 +1480,73 @@
             ctx.strokeRect(154, 204, 492, 292);
             ctx.setLineDash([]);
 
-            // Coffee Tables & Chairs
+            // Coffee Tables & Floor Pillows
+            const flowerColors = [
+                { petal: '#9575cd', center: '#ffd54f', leaf: '#66bb6a' },  // Purple
+                { petal: '#ffb74d', center: '#fff176', leaf: '#81c784' },  // Orange
+                { petal: '#ef9a9a', center: '#ffcc80', leaf: '#a5d6a7' },  // Pink
+                { petal: '#90caf9', center: '#fff9c4', leaf: '#81c784' }   // Blue
+            ];
             tables.forEach((t, tableIdx) => {
-                // Draw a chair with backrest
-                const drawChair = (cx, cy, chairId, side) => {
+                // Draw a floor pillow (cushion)
+                const drawPillow = (cx, cy, chairId) => {
                     const isHighlighted = nearestInteractable && nearestInteractable.id === chairId && !localPlayer.isSitting;
-                    const cw = 35, ch = 35;
+                    const pw = 38, ph = 36;
 
                     // Shadow
-                    ctx.fillStyle = 'rgba(0,0,0,0.15)';
-                    ctx.beginPath(); ctx.ellipse(cx + cw/2, cy + ch + 2, cw/2, 6, 0, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+                    ctx.beginPath(); ctx.ellipse(cx + pw/2, cy + ph + 1, pw/2 + 2, 5, 0, 0, Math.PI*2); ctx.fill();
 
-                    // Chair legs (4 little legs)
-                    ctx.fillStyle = '#6d4c41';
-                    ctx.fillRect(cx + 2, cy + ch - 4, 4, 8);
-                    ctx.fillRect(cx + cw - 6, cy + ch - 4, 4, 8);
-                    ctx.fillRect(cx + 2, cy + 2, 4, 8);
-                    ctx.fillRect(cx + cw - 6, cy + 2, 4, 8);
-
-                    // Backrest (on the side away from table)
-                    ctx.fillStyle = '#5d4037';
-                    if (side === 'L') {
-                        // Backrest on left side
-                        ctx.fillRect(cx - 4, cy + 2, 6, ch - 4);
-                        ctx.fillStyle = '#795548';
-                        ctx.fillRect(cx - 3, cy + 4, 4, ch - 8);
+                    // Pillow base (darker edge)
+                    ctx.fillStyle = '#b8a08c';
+                    if (ctx.roundRect) {
+                        ctx.beginPath(); ctx.roundRect(cx, cy, pw, ph, 5); ctx.fill();
                     } else {
-                        // Backrest on right side
-                        ctx.fillRect(cx + cw - 2, cy + 2, 6, ch - 4);
-                        ctx.fillStyle = '#795548';
-                        ctx.fillRect(cx + cw - 1, cy + 4, 4, ch - 8);
+                        ctx.fillRect(cx, cy, pw, ph);
                     }
 
-                    // Seat base
-                    ctx.fillStyle = '#8d6e63';
-                    ctx.fillRect(cx, cy, cw, ch);
-                    // Cushion top
-                    ctx.fillStyle = isHighlighted ? '#d4a999' : '#bcaaa4';
-                    ctx.fillRect(cx + 2, cy + 2, cw - 4, ch - 4);
-                    // Cushion pattern (cross stitch)
-                    ctx.fillStyle = isHighlighted ? '#e8c4b8' : '#d7ccc8';
-                    ctx.fillRect(cx + cw/2 - 1, cy + 4, 2, ch - 8);
-                    ctx.fillRect(cx + 4, cy + ch/2 - 1, cw - 8, 2);
+                    // Pillow top surface (lighter)
+                    ctx.fillStyle = isHighlighted ? '#dfc8b4' : '#d2baa6';
+                    if (ctx.roundRect) {
+                        ctx.beginPath(); ctx.roundRect(cx + 2, cy + 2, pw - 4, ph - 4, 4); ctx.fill();
+                    } else {
+                        ctx.fillRect(cx + 2, cy + 2, pw - 4, ph - 4);
+                    }
+
+                    // X cross-stitch pattern
+                    ctx.strokeStyle = isHighlighted ? '#c9a990' : '#c0a48e';
+                    ctx.lineWidth = 2;
+                    // Top-left to bottom-right diagonal
+                    ctx.beginPath();
+                    ctx.moveTo(cx + 6, cy + 6);
+                    ctx.lineTo(cx + pw - 6, cy + ph - 6);
+                    ctx.stroke();
+                    // Top-right to bottom-left diagonal
+                    ctx.beginPath();
+                    ctx.moveTo(cx + pw - 6, cy + 6);
+                    ctx.lineTo(cx + 6, cy + ph - 6);
+                    ctx.stroke();
+
+                    // Corner tufts (small dots at corners)
+                    ctx.fillStyle = '#c0a48e';
+                    ctx.fillRect(cx + 5, cy + 5, 3, 3);
+                    ctx.fillRect(cx + pw - 8, cy + 5, 3, 3);
+                    ctx.fillRect(cx + 5, cy + ph - 8, 3, 3);
+                    ctx.fillRect(cx + pw - 8, cy + ph - 8, 3, 3);
 
                     // Outline highlight when near
                     if (isHighlighted) {
                         ctx.strokeStyle = '#ffe082';
                         ctx.lineWidth = 2;
-                        ctx.strokeRect(cx - (side === 'L' ? 4 : 0), cy, cw + 4, ch);
+                        if (ctx.roundRect) {
+                            ctx.beginPath(); ctx.roundRect(cx - 1, cy - 1, pw + 2, ph + 2, 6); ctx.stroke();
+                        } else {
+                            ctx.strokeRect(cx - 1, cy - 1, pw + 2, ph + 2);
+                        }
                     }
                 };
-                drawChair(t[0] - 65, t[1] - 18, `chair_${tableIdx}_L`, 'L');
-                drawChair(t[0] + 30, t[1] - 18, `chair_${tableIdx}_R`, 'R');
+                drawPillow(t[0] - 68, t[1] - 18, `chair_${tableIdx}_L`);
+                drawPillow(t[0] + 30, t[1] - 18, `chair_${tableIdx}_R`);
 
                 // Shadow for Table
                 ctx.fillStyle = 'rgba(0,0,0,0.15)';
@@ -1514,32 +1559,55 @@
                 ctx.beginPath(); ctx.arc(t[0], t[1], 45, 0, Math.PI*2); ctx.fill();
                 ctx.fillStyle = '#795548';
                 ctx.beginPath(); ctx.arc(t[0], t[1] - 4, 45, 0, Math.PI*2); ctx.fill();
-                // Table surface detail (wood grain)
+                // Table surface detail (wood grain rings)
                 ctx.strokeStyle = '#6d4c41';
                 ctx.lineWidth = 1;
                 ctx.beginPath(); ctx.arc(t[0], t[1] - 4, 30, 0, Math.PI*2); ctx.stroke();
                 ctx.beginPath(); ctx.arc(t[0], t[1] - 4, 15, 0, Math.PI*2); ctx.stroke();
 
-                // Table coffee cup (improved)
-                const cupX = t[0] - 8, cupY = t[1] - 18;
-                // Saucer
-                ctx.fillStyle = '#e0d6cc';
-                ctx.beginPath(); ctx.ellipse(cupX + 8, cupY + 14, 10, 4, 0, 0, Math.PI*2); ctx.fill();
-                // Cup body
-                ctx.fillStyle = '#f5f0eb';
-                ctx.fillRect(cupX + 2, cupY, 12, 14);
-                // Cup rim
+                // Flower pot on table (different flowers per table)
+                const fc = flowerColors[tableIdx % flowerColors.length];
+                const potX = t[0], potY = t[1] - 6;
+
+                // Pot body (white ceramic)
+                ctx.fillStyle = '#f0ebe3';
+                ctx.fillRect(potX - 7, potY, 14, 12);
+                // Pot rim
                 ctx.fillStyle = '#fff';
-                ctx.fillRect(cupX + 2, cupY, 12, 3);
-                // Coffee inside
-                ctx.fillStyle = '#5c3a1e';
-                ctx.fillRect(cupX + 3, cupY + 3, 10, 4);
-                // Handle
-                ctx.strokeStyle = '#ddd';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(cupX + 15, cupY + 7, 4, -Math.PI/2, Math.PI/2);
-                ctx.stroke();
+                ctx.fillRect(potX - 8, potY - 2, 16, 4);
+                // Pot base (slightly narrower)
+                ctx.fillStyle = '#e0d6cc';
+                ctx.fillRect(potX - 5, potY + 10, 10, 3);
+                // Soil
+                ctx.fillStyle = '#5d4037';
+                ctx.fillRect(potX - 6, potY + 1, 12, 3);
+
+                // Leaves (small green bits)
+                ctx.fillStyle = fc.leaf;
+                ctx.fillRect(potX - 4, potY - 4, 3, 4);
+                ctx.fillRect(potX + 1, potY - 4, 3, 4);
+                ctx.fillRect(potX - 2, potY - 3, 4, 3);
+
+                // Flower petals (5 small blossoms arranged in a cluster)
+                ctx.fillStyle = fc.petal;
+                // Center flower
+                ctx.fillRect(potX - 3, potY - 10, 6, 5);
+                // Left flower
+                ctx.fillRect(potX - 8, potY - 8, 5, 4);
+                // Right flower
+                ctx.fillRect(potX + 3, potY - 8, 5, 4);
+                // Top-left
+                ctx.fillRect(potX - 6, potY - 12, 4, 4);
+                // Top-right
+                ctx.fillRect(potX + 2, potY - 12, 4, 4);
+
+                // Flower centers (little dots)
+                ctx.fillStyle = fc.center;
+                ctx.fillRect(potX - 1, potY - 9, 2, 2);
+                ctx.fillRect(potX - 6, potY - 7, 2, 2);
+                ctx.fillRect(potX + 4, potY - 7, 2, 2);
+                ctx.fillRect(potX - 5, potY - 11, 2, 2);
+                ctx.fillRect(potX + 3, potY - 11, 2, 2);
             });
         }
 
@@ -1643,26 +1711,51 @@
                     if (now - p.lastSeen > 15000 && !p._leaving) continue;
 
                     // Skip rendering if leave animation is fully complete
-                    if (p._leaving && (now - p._leaving > 500)) continue;
+                    if (p._leaving && (now - p._leaving > 800)) continue;
 
                     const isMe = (uid === currentUser.uid);
                     
                     // Initialize client state for interpolation
                     if (!clientState[uid]) {
                         clientState[uid] = { currentX: p.x, currentY: p.y, animOffset: 0, idleOffset: Math.random() * Math.PI * 2, spawnTime: now };
-                        // Spawn sparkle particles (skip for self on first load)
+                        // Magical spawn particles (skip for self on first load)
                         if (!isMe || now - (p.lastSeen || 0) < 3000) {
-                            for (let i = 0; i < 6; i++) {
-                                const angle = (Math.PI * 2 / 6) * i;
+                            const cx = p.x + PLAYER_SIZE / 2;
+                            const cy = p.y + PLAYER_SIZE / 2;
+                            // Spiraling star burst
+                            for (let i = 0; i < 10; i++) {
+                                const angle = (Math.PI * 2 / 10) * i;
+                                const speed = 40 + Math.random() * 30;
                                 particles.push({
-                                    x: p.x + PLAYER_SIZE / 2,
-                                    y: p.y + PLAYER_SIZE / 2,
-                                    vx: Math.cos(angle) * 50,
-                                    vy: Math.sin(angle) * 50 - 20,
-                                    life: 0.8,
-                                    type: 'sparkle'
+                                    x: cx, y: cy,
+                                    vx: Math.cos(angle) * speed,
+                                    vy: Math.sin(angle) * speed - 25,
+                                    life: 0.6 + Math.random() * 0.4,
+                                    type: 'star',
+                                    color: ['#ffe082', '#80deea', '#f48fb1', '#a5d6a7', '#ce93d8'][i % 5],
+                                    spin: angle
                                 });
                             }
+                            // Rising fairy dust (floats upward slowly)
+                            for (let i = 0; i < 8; i++) {
+                                particles.push({
+                                    x: cx + (Math.random() - 0.5) * 30,
+                                    y: cy + Math.random() * 10,
+                                    vx: (Math.random() - 0.5) * 15,
+                                    vy: -20 - Math.random() * 40,
+                                    life: 0.8 + Math.random() * 0.6,
+                                    type: 'fairy',
+                                    color: ['#ffe082', '#80deea', '#f48fb1'][i % 3]
+                                });
+                            }
+                            // Central flash ring
+                            particles.push({
+                                x: cx, y: cy,
+                                vx: 0, vy: 0,
+                                life: 0.4,
+                                type: 'ring',
+                                size: 5
+                            });
                         }
                     }
                     const cs = clientState[uid];
@@ -1691,25 +1784,30 @@
                     let idleBounceY = 0;
                     let playerAlpha = 1;
 
-                    // Spawn animation (pop-in over 500ms)
+                    // Spawn animation (magical pop-in over 600ms)
                     const spawnElapsed = now - (cs.spawnTime || 0);
-                    if (spawnElapsed < 500) {
-                        const t = spawnElapsed / 500;
-                        // Bouncy ease-out: overshoot then settle
-                        const bounce = t < 0.6 ? (t / 0.6) * 1.3 : 1.3 - (t - 0.6) / 0.4 * 0.3;
-                        scaleX = bounce;
-                        scaleY = bounce;
-                        playerAlpha = Math.min(1, t * 2);
+                    if (spawnElapsed < 600) {
+                        const t = spawnElapsed / 600;
+                        // Elastic bounce: overshoot, bounce back, settle
+                        const elastic = t < 0.4
+                            ? (t / 0.4) * 1.4
+                            : t < 0.7
+                                ? 1.4 - (t - 0.4) / 0.3 * 0.5
+                                : 0.9 + (t - 0.7) / 0.3 * 0.1;
+                        scaleX = elastic;
+                        scaleY = elastic;
+                        playerAlpha = Math.min(1, t * 3);
                     }
 
-                    // Leave animation (shrink + fade over 500ms)
+                    // Leave animation (dissolve + spin over 800ms)
                     if (p._leaving) {
                         const leaveElapsed = now - p._leaving;
-                        const lt = Math.min(1, leaveElapsed / 500);
-                        const shrink = 1 - lt;
+                        const lt = Math.min(1, leaveElapsed / 800);
+                        // Shrink with a slight spin wobble
+                        const shrink = Math.max(0, 1 - lt * 1.2);
                         scaleX = shrink;
                         scaleY = shrink;
-                        playerAlpha = 1 - lt;
+                        playerAlpha = Math.max(0, 1 - lt);
                     }
 
                     if (!isMoving) {
@@ -1896,17 +1994,72 @@
             drawCafeEnvironment();
             drawPlayers();
 
-            // Draw particles (hearts, sparkles, poofs)
+            // Draw particles (hearts, sparkles, poofs, stars, fairy, smoke, pixels, rings)
             particles.forEach(p => {
-                ctx.globalAlpha = Math.max(0, p.life / (p.type === 'sparkle' ? 0.8 : p.type === 'poof' ? 0.6 : 1.5));
-                if (p.type === 'sparkle') {
-                    // Star sparkle
+                const maxLife = p.type === 'star' ? 1.0 : p.type === 'fairy' ? 1.4 : p.type === 'smoke' ? 1.2 : p.type === 'pixel' ? 1.0 : p.type === 'ring' ? 0.4 : 1.5;
+                ctx.globalAlpha = Math.max(0, p.life / maxLife);
+
+                if (p.type === 'star') {
+                    // 4-pointed rotating star
+                    ctx.fillStyle = p.color || '#ffe082';
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    const rot = (p.spin || 0) + Date.now() * 0.008;
+                    ctx.rotate(rot);
+                    const sz = 2 + p.life * 4;
+                    // Diamond shape (rotated square)
+                    ctx.beginPath();
+                    ctx.moveTo(0, -sz);
+                    ctx.lineTo(sz * 0.4, -sz * 0.4);
+                    ctx.lineTo(sz, 0);
+                    ctx.lineTo(sz * 0.4, sz * 0.4);
+                    ctx.lineTo(0, sz);
+                    ctx.lineTo(-sz * 0.4, sz * 0.4);
+                    ctx.lineTo(-sz, 0);
+                    ctx.lineTo(-sz * 0.4, -sz * 0.4);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.restore();
+                } else if (p.type === 'fairy') {
+                    // Twinkling dot with soft glow
+                    ctx.fillStyle = p.color || '#ffe082';
+                    const twinkle = 1 + Math.sin(Date.now() * 0.015 + p.x) * 0.5;
+                    const r = (1.5 + p.life * 2) * twinkle;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Tiny cross highlight
+                    ctx.globalAlpha *= 0.6;
+                    ctx.fillRect(p.x - r * 1.5, p.y - 0.5, r * 3, 1);
+                    ctx.fillRect(p.x - 0.5, p.y - r * 1.5, 1, r * 3);
+                } else if (p.type === 'ring') {
+                    // Expanding flash ring
+                    const ringR = 5 + (0.4 - p.life) / 0.4 * 40;
+                    ctx.strokeStyle = '#ffe082';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
+                    ctx.stroke();
+                } else if (p.type === 'pixel') {
+                    // Dissolving pixel fragment
+                    ctx.fillStyle = p.color || '#ffb3ba';
+                    const sz = p.size || 3;
+                    ctx.fillRect(p.x - sz / 2, p.y - sz / 2, sz, sz);
+                } else if (p.type === 'smoke') {
+                    // Soft expanding smoke cloud
+                    const smokeR = (p.size || 6) + (1.2 - p.life) * 8;
+                    ctx.fillStyle = 'rgba(200, 200, 200, 0.4)';
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, smokeR, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (p.type === 'sparkle') {
+                    // Legacy sparkle (cross)
                     ctx.fillStyle = '#ffe082';
                     const sz = 2 + p.life * 3;
-                    ctx.fillRect(p.x - sz/2, p.y - 1, sz, 2);
-                    ctx.fillRect(p.x - 1, p.y - sz/2, 2, sz);
+                    ctx.fillRect(p.x - sz / 2, p.y - 1, sz, 2);
+                    ctx.fillRect(p.x - 1, p.y - sz / 2, 2, sz);
                 } else if (p.type === 'poof') {
-                    // Colored poof cloud
+                    // Colored poof
                     ctx.fillStyle = p.color || '#ffb3ba';
                     ctx.beginPath();
                     ctx.arc(p.x, p.y, 3 + (0.6 - p.life) * 6, 0, Math.PI * 2);
