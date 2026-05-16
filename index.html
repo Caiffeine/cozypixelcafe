@@ -30,7 +30,7 @@
             display: block;
             position: absolute;
             top: 0; left: 0; bottom: 0; right: 0;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%);
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.04) 50%);
             z-index: 50;
             background-size: 100% 4px;
             pointer-events: none;
@@ -147,6 +147,21 @@
         </div>
     </div>
 
+    <!-- Welcome Dialog Overlay -->
+    <div id="welcome-dialog-overlay" class="hidden absolute inset-0 bg-black/80 z-50 items-center justify-center p-4 backdrop-blur-md">
+        <div class="bg-[#4a3e47] border-4 border-[#8fb3a0] p-6 rounded-2xl shadow-2xl max-w-md w-full">
+            <h2 class="text-3xl text-[#d89f87] mb-4 text-center">Welcome to Cozy Cafe!</h2>
+            <div class="text-lg text-[#a89f91] mb-6 space-y-3 text-left">
+                <p>Relax, grab a coffee, and chat with friends.</p>
+                <div class="bg-[#2c272e] p-3 rounded-lg border-2 border-[#6a5a65]">
+                    <p class="text-white mb-2"><strong class="text-[#8fb3a0]">Desktop:</strong> Use <kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">W</kbd><kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">A</kbd><kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">S</kbd><kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">D</kbd> or Arrows to move. Press <kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">Enter</kbd> to chat.</p>
+                    <p class="text-white"><strong class="text-[#8fb3a0]">Mobile:</strong> Use the joystick to move. Tap the chat icon to talk.</p>
+                </div>
+            </div>
+            <button onclick="closeWelcomeDialog()" class="cafe-btn px-6 py-2 text-xl w-full bg-[#8fb3a0] text-[#1c181f] border-4 border-[#6b8c7a] shadow-[0_4px_0_#506e5e]">I'm Ready!</button>
+        </div>
+    </div>
+
     <!-- Main Menu UI -->
     <div id="menu-ui" class="absolute inset-0 flex flex-col items-center justify-center z-40 bg-[#2c272e]/90 backdrop-blur-sm overflow-y-auto py-4">
         <div class="bg-[#4a3e47] p-6 md:p-8 rounded-2xl border-4 border-[#6a5a65] max-w-md w-full mx-4 shadow-2xl flex flex-col items-center my-auto">
@@ -222,7 +237,7 @@
             <!-- Chat Form (Floating) -->
             <div id="chat-bar" class="hidden pointer-events-auto bg-[#4a3e47]/90 border-4 border-[#6a5a65] p-2 rounded-xl shadow-lg w-full max-w-sm mb-1 md:mb-2" style="backdrop-filter: blur(4px);">
                 <form onsubmit="handleChatSubmit(event)" class="flex w-full gap-2">
-                    <input type="text" id="chat-input" placeholder="Say something nice..." maxlength="50" autocomplete="off" class="cafe-input flex-1 p-2 text-base md:text-xl" onfocus="window.isTyping = true" onblur="window.isTyping = false">
+                    <input type="text" id="chat-input" placeholder="Say something nice..." maxlength="120" autocomplete="off" class="cafe-input flex-1 p-2 text-base md:text-xl" onfocus="window.isTyping = true" onblur="window.isTyping = false">
                     <button type="submit" class="cafe-btn px-3 py-1 md:px-4 md:py-1 text-base md:text-xl">Chat</button>
                 </form>
             </div>
@@ -300,8 +315,12 @@
             lastSeen: 0,
             username: "",
             vx: 0,
-            vy: 0
+            vy: 0,
+            facingDir: 'right'
         };
+
+        let lastActivityTime = Date.now();
+        const IDLE_TIMEOUT_MS = 1.5 * 60 * 1000; // 1.5 minutes
 
         // Canvas & Engine variables
         const canvas = document.getElementById('gameCanvas');
@@ -309,13 +328,14 @@
         const CANVAS_WIDTH = 800;
         const CANVAS_HEIGHT = 600;
         const PLAYER_SIZE = 32;
-        const SPEED = 4;
+        const SPEED = 240;
 
         // Input state
         const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, w: false, a: false, s: false, d: false };
         let gameLoopId = null;
         let networkSyncId = null;
         window.isTyping = false; // Prevent WASD movement while typing
+        window.isWelcomeOpen = false; // Prevent movement when welcome dialog is open
         
         let joystickVector = { x: 0, y: 0 };
         let nippleManager = null;
@@ -562,6 +582,11 @@
                 document.getElementById('game-ui').classList.remove('hidden');
                 document.getElementById('game-ui').classList.add('flex');
 
+                // Show welcome dialog
+                window.isWelcomeOpen = true;
+                document.getElementById('welcome-dialog-overlay').classList.remove('hidden');
+                document.getElementById('welcome-dialog-overlay').classList.add('flex');
+
                 // Set up RTDB real-time sync for player positions
                 rtdbPlayersRef = rtdbRef(rtdb, `rooms/${code}/players`);
                 rtdbMyRef = rtdbRef(rtdb, `rooms/${code}/players/${currentUser.uid}`);
@@ -575,6 +600,7 @@
                     y: localPlayer.y,
                     vx: 0,
                     vy: 0,
+                    facingDir: localPlayer.facingDir,
                     color: localPlayer.color,
                     username: localPlayer.username,
                     msg: localPlayer.msg,
@@ -599,6 +625,7 @@
                                 p.y = data[uid].y;
                                 p.vx = data[uid].vx || 0;
                                 p.vy = data[uid].vy || 0;
+                                p.facingDir = data[uid].facingDir || 'right';
                                 p.color = data[uid].color;
                                 p.username = data[uid].username;
                                 p.msg = data[uid].msg;
@@ -742,6 +769,12 @@
             document.getElementById('dialog-overlay').classList.remove('flex');
         };
 
+        window.closeWelcomeDialog = () => {
+            document.getElementById('welcome-dialog-overlay').classList.add('hidden');
+            document.getElementById('welcome-dialog-overlay').classList.remove('flex');
+            window.isWelcomeOpen = false;
+        };
+
         window.copyInviteLink = () => {
             const link = window.location.href;
             const textArea = document.createElement("textarea");
@@ -794,15 +827,23 @@
             document.getElementById('online-count').innerText = `${count} Online`;
         }
 
+        let lastChatTime = 0;
         window.handleChatSubmit = async (e) => {
             e.preventDefault();
             const input = document.getElementById('chat-input');
             let msg = input.value.trim();
             
+            const now = Date.now();
+            if (now - lastChatTime < 1500) {
+                return; // Prevent spam
+            }
+
             if (msg && currentRoom && currentUser) {
-                msg = msg.substring(0, 50); // Enforce max 50 chars for rules
+                msg = msg.substring(0, 120); // Enforce max 120 chars
                 localPlayer.msg = msg;
-                localPlayer.msgTime = Date.now();
+                localPlayer.msgTime = now;
+                lastActivityTime = now;
+                lastChatTime = now;
                 
                 try {
                     await updateDoc(getRoomRef(currentRoom), {
@@ -862,21 +903,22 @@
             }
         });
 
-        function updatePhysics() {
-            if (window.isTyping) return; // No movement while chatting
+        function updatePhysics(dt) {
+            if (window.isTyping || window.isWelcomeOpen) return; // No movement while chatting or reading welcome
 
             let dx = 0;
             let dy = 0;
+            const currentSpeed = SPEED * dt;
 
-            if (keys['ArrowUp'] || keys['w']) dy -= SPEED;
-            if (keys['ArrowDown'] || keys['s']) dy += SPEED;
-            if (keys['ArrowLeft'] || keys['a']) dx -= SPEED;
-            if (keys['ArrowRight'] || keys['d']) dx += SPEED;
+            if (keys['ArrowUp'] || keys['w']) dy -= currentSpeed;
+            if (keys['ArrowDown'] || keys['s']) dy += currentSpeed;
+            if (keys['ArrowLeft'] || keys['a']) dx -= currentSpeed;
+            if (keys['ArrowRight'] || keys['d']) dx += currentSpeed;
 
             // Apply joystick input if no keyboard input
             if (dx === 0 && dy === 0) {
-                dx = joystickVector.x * SPEED;
-                dy = joystickVector.y * SPEED;
+                dx = joystickVector.x * currentSpeed;
+                dy = joystickVector.y * currentSpeed;
             } else {
                 if (dx !== 0 && dy !== 0) {
                     dx *= 0.707;
@@ -884,10 +926,17 @@
                 }
             }
 
+            if (dx < 0) localPlayer.facingDir = 'left';
+            if (dx > 0) localPlayer.facingDir = 'right';
+
             localPlayer.x += dx;
             localPlayer.y += dy;
             localPlayer.vx = dx;
             localPlayer.vy = dy;
+
+            if (dx !== 0 || dy !== 0) {
+                lastActivityTime = Date.now();
+            }
 
             // Simple cafe boundaries (keep them on the rug/floor area mostly)
             // Left/Right bounds
@@ -968,9 +1017,34 @@
         function drawChatBubble(x, y, text) {
             ctx.font = '24px "VT323", monospace';
             const padding = 12;
-            const textWidth = ctx.measureText(text).width;
-            const bubbleWidth = textWidth + padding * 2;
-            const bubbleHeight = 40;
+            const maxLineWidth = 200;
+            
+            // Wrap text
+            const words = text.split(' ');
+            let lines = [];
+            let currentLine = words[0];
+            
+            for (let i = 1; i < words.length; i++) {
+                const word = words[i];
+                const width = ctx.measureText(currentLine + " " + word).width;
+                if (width < maxLineWidth) {
+                    currentLine += " " + word;
+                } else {
+                    lines.push(currentLine);
+                    currentLine = word;
+                }
+            }
+            lines.push(currentLine);
+
+            let maxTextWidth = 0;
+            lines.forEach(line => {
+                const width = ctx.measureText(line).width;
+                if (width > maxTextWidth) maxTextWidth = width;
+            });
+
+            const bubbleWidth = maxTextWidth + padding * 2;
+            const lineHeight = 24;
+            const bubbleHeight = (lines.length * lineHeight) + padding;
             
             // Position bubble above the player and username, centered
             const bubbleX = x + (PLAYER_SIZE/2) - (bubbleWidth/2);
@@ -1020,7 +1094,11 @@
             ctx.fillStyle = '#2c272e';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(text, bubbleX + bubbleWidth/2, bubbleY + bubbleHeight/2 + 2);
+            
+            lines.forEach((line, index) => {
+                const lineY = bubbleY + padding + (index * lineHeight) + (lineHeight / 2) - 4;
+                ctx.fillText(line, bubbleX + bubbleWidth/2, lineY);
+            });
             
             // Reset alignment for other drawings
             ctx.textAlign = 'left';
@@ -1126,13 +1204,18 @@
                     }
                     
                     // Cute face (eyes and blush)
+                    let faceOffsetX = 0;
+                    const currentFacingDir = isMe ? localPlayer.facingDir : (p.facingDir || 'right');
+                    if (currentFacingDir === 'left') faceOffsetX = -6;
+                    if (currentFacingDir === 'right') faceOffsetX = 6;
+
                     ctx.fillStyle = '#2c272e'; // Eyes
-                    ctx.fillRect(drawX + 8, bodyY + 12, 4, 6);
-                    ctx.fillRect(drawX + PLAYER_SIZE - 12, bodyY + 12, 4, 6);
+                    ctx.fillRect(drawX + 8 + faceOffsetX, bodyY + 12, 4, 6);
+                    ctx.fillRect(drawX + PLAYER_SIZE - 12 + faceOffsetX, bodyY + 12, 4, 6);
                     
                     ctx.fillStyle = 'rgba(255,100,100,0.4)'; // Blush
-                    ctx.fillRect(drawX + 4, bodyY + 18, 6, 4);
-                    ctx.fillRect(drawX + PLAYER_SIZE - 10, bodyY + 18, 6, 4);
+                    ctx.fillRect(drawX + 4 + faceOffsetX, bodyY + 18, 6, 4);
+                    ctx.fillRect(drawX + PLAYER_SIZE - 10 + faceOffsetX, bodyY + 18, 6, 4);
 
                     // Highlight self outline
                     if (isMe) {
@@ -1175,13 +1258,19 @@
             drawPlayers();
         }
 
+        let lastFrameTime = 0;
         function startGameLoop() {
-            function loop() {
-                updatePhysics();
+            if (gameLoopId) return;
+            lastFrameTime = performance.now();
+            function loop(now) {
+                const dt = (now - lastFrameTime) / 1000;
+                lastFrameTime = now;
+                const safeDt = Math.min(dt, 0.1); // Cap dt to prevent huge jumps
+                updatePhysics(safeDt);
                 drawGame();
                 gameLoopId = requestAnimationFrame(loop);
             }
-            loop();
+            loop(performance.now());
         }
 
         function startNetworkSync() {
@@ -1194,6 +1283,12 @@
                     return;
                 }
 
+                if (Date.now() - lastActivityTime > IDLE_TIMEOUT_MS) {
+                    showDialog("You were disconnected due to inactivity.");
+                    leaveRoom();
+                    return;
+                }
+
                 localPlayer.lastSeen = Date.now();
                 
                 rtdbSet(rtdbMyRef, {
@@ -1201,6 +1296,7 @@
                     y: Math.round(localPlayer.y),
                     vx: Math.round(localPlayer.vx * 10) / 10,
                     vy: Math.round(localPlayer.vy * 10) / 10,
+                    facingDir: localPlayer.facingDir,
                     color: localPlayer.color,
                     username: localPlayer.username,
                     msg: localPlayer.msg || '',
