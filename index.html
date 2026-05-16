@@ -163,8 +163,8 @@
             <div class="text-lg text-[#a89f91] mb-6 space-y-3 text-left">
                 <p>Relax, grab a coffee, and chat with friends.</p>
                 <div class="bg-[#2c272e] p-3 rounded-lg border-2 border-[#6a5a65]">
-                    <p class="text-white mb-2"><strong class="text-[#8fb3a0]">Desktop:</strong> Use <kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">W</kbd><kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">A</kbd><kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">S</kbd><kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">D</kbd> or Arrows to move. Press <kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">Enter</kbd> to chat.</p>
-                    <p class="text-white"><strong class="text-[#8fb3a0]">Mobile:</strong> Use the joystick to move. Tap the chat icon to talk.</p>
+                    <p class="text-white mb-2"><strong class="text-[#8fb3a0]">Desktop:</strong> Use <kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">W</kbd><kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">A</kbd><kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">S</kbd><kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">D</kbd> or Arrows to move. Press <kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">E</kbd> to interact and <kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">F</kbd> to consume. Press <kbd class="bg-[#4a3e47] px-1 rounded border-b-2 border-black">Enter</kbd> to chat.</p>
+                    <p class="text-white"><strong class="text-[#8fb3a0]">Mobile:</strong> Use the joystick to move. Tap the chat icon to talk. On-screen action buttons will appear when you're near interactive objects.</p>
                 </div>
             </div>
             <button onclick="closeWelcomeDialog()" class="cafe-btn green px-6 py-2 text-xl w-full">I'm Ready!</button>
@@ -254,11 +254,26 @@
             <div class="flex items-end justify-between w-full">
                 <div id="joystick-zone" class="pointer-events-auto md:hidden" style="width: 120px; height: 120px; position: relative;"></div>
                 <div class="flex-1"></div>
-                <button id="floating-chat-btn" class="pointer-events-auto ml-auto" onclick="toggleChat()">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="#2c272e" xmlns="http://www.w3.org/2000/svg" style="image-rendering: pixelated;">
-                        <path d="M2 4h20v12H10l-4 4v-4H2V4z"/>
-                    </svg>
-                </button>
+                <div class="flex gap-2 items-end">
+                    <!-- Action: Drink -->
+                    <button id="btn-drink" class="hidden pointer-events-auto cafe-btn p-2" onclick="handleDrink()" style="border-radius: 50%; width: 56px; height: 56px;">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="#2c272e" xmlns="http://www.w3.org/2000/svg" style="image-rendering: pixelated;">
+                            <path d="M4 6h12v10a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V6zm14 2h2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-2V8z"/>
+                        </svg>
+                    </button>
+                    <!-- Action: Interact -->
+                    <button id="btn-interact" class="hidden pointer-events-auto cafe-btn p-2" onclick="handleInteract()" style="border-radius: 50%; width: 56px; height: 56px;">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="#2c272e" xmlns="http://www.w3.org/2000/svg" style="image-rendering: pixelated;">
+                            <path d="M9 2v6H7V4H5v8H3v4a6 6 0 0 0 6 6h4a6 6 0 0 0 6-6V8h-2v8h-2V6h-2v8h-2V2H9z"/>
+                        </svg>
+                    </button>
+                    <!-- Chat -->
+                    <button id="floating-chat-btn" class="pointer-events-auto" onclick="toggleChat()">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="#2c272e" xmlns="http://www.w3.org/2000/svg" style="image-rendering: pixelated;">
+                            <path d="M2 4h20v12H10l-4 4v-4H2V4z"/>
+                        </svg>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -271,7 +286,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, deleteField, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getDatabase, ref as rtdbRef, set as rtdbSet, onValue, off, update as rtdbUpdate, remove as rtdbRemove, serverTimestamp as rtdbServerTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
         import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app-check.js";
 
@@ -325,7 +340,9 @@
             username: "",
             vx: 0,
             vy: 0,
-            facingDir: 'right'
+            facingDir: 'right',
+            isSitting: false,
+            heldItem: null
         };
 
         let lastActivityTime = Date.now();
@@ -578,6 +595,7 @@
                 localPlayer.msg = "";
                 localPlayer.lastSeen = Date.now();
                 localPlayer.username = username;
+                lastActivityTime = Date.now();
                 
                 await updateDoc(roomRef, {
                     [`players.${currentUser.uid}`]: localPlayer
@@ -614,7 +632,9 @@
                     username: localPlayer.username,
                     msg: localPlayer.msg,
                     msgTime: localPlayer.msgTime,
-                    lastSeen: Date.now()
+                    lastSeen: Date.now(),
+                    isSitting: localPlayer.isSitting,
+                    heldItem: localPlayer.heldItem
                 });
 
                 // Listen for ALL player position updates via RTDB WebSocket
@@ -739,6 +759,8 @@
                     });
                     if (!val || !val.players || Object.keys(val.players).length === 0) {
                         await rtdbRemove(roomRtdbRef);
+                        const roomRef = getRoomRef(code);
+                        await deleteDoc(roomRef);
                     }
                 } catch(e) {}
             }
@@ -750,6 +772,7 @@
             document.getElementById('menu-ui').classList.remove('hidden');
             document.getElementById('game-ui').classList.add('hidden');
             document.getElementById('game-ui').classList.remove('flex');
+            startPreviewLoop();
             
             const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
             window.history.pushState({path:newUrl},'',newUrl);
@@ -911,6 +934,16 @@
                     document.getElementById('chat-input').focus();
                 }
             }
+
+            // Interact with environment
+            if (e.key.toLowerCase() === 'e' && currentRoom && !window.isWelcomeOpen) {
+                window.handleInteract();
+            }
+
+            // Drink coffee
+            if (e.key.toLowerCase() === 'f' && currentRoom && !window.isWelcomeOpen) {
+                window.handleDrink();
+            }
         });
 
         window.addEventListener('keyup', (e) => {
@@ -957,6 +990,9 @@
 
             if (dx !== 0 || dy !== 0) {
                 lastActivityTime = Date.now();
+                if (localPlayer.isSitting) {
+                    localPlayer.isSitting = false;
+                }
             }
 
             // Simple cafe boundaries (keep them on the rug/floor area mostly)
@@ -964,7 +1000,99 @@
             localPlayer.x = Math.max(20, Math.min(CANVAS_WIDTH - PLAYER_SIZE - 20, localPlayer.x));
             // Top bounds (barista counter) / Bottom bounds
             localPlayer.y = Math.max(120, Math.min(CANVAS_HEIGHT - PLAYER_SIZE - 20, localPlayer.y));
+
+            // Interaction Proximity
+            let newNearest = null;
+            let minDist = 60; // Interaction distance
+            const px = localPlayer.x + PLAYER_SIZE / 2;
+            const py = localPlayer.y + PLAYER_SIZE / 2;
+
+            INTERACTABLES.forEach(obj => {
+                let dist = 999;
+                if (obj.type === 'chair' || obj.type === 'machine') {
+                    const cx = obj.x + obj.w / 2;
+                    const cy = obj.y + obj.h / 2;
+                    dist = Math.hypot(px - cx, py - cy);
+                } else if (obj.type === 'rug') {
+                    if (px > obj.x && px < obj.x + obj.w && py > obj.y && py < obj.y + obj.h) {
+                        dist = 0; // Automatic range
+                    }
+                }
+                
+                if (dist < minDist) {
+                    minDist = dist;
+                    newNearest = obj;
+                }
+            });
+
+            if (nearestInteractable !== newNearest) {
+                nearestInteractable = newNearest;
+                updateActionButtons();
+            }
+            
+            // Update particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.y -= 30 * dt; // Float up
+                p.life -= dt;
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
         }
+
+        window.handleInteract = function() {
+            if (!nearestInteractable) return;
+            if (nearestInteractable.type === 'chair' || nearestInteractable.type === 'rug') {
+                localPlayer.isSitting = !localPlayer.isSitting;
+            } else if (nearestInteractable.type === 'machine') {
+                localPlayer.heldItem = 'coffee';
+            }
+            updateActionButtons();
+        };
+
+        window.handleDrink = function() {
+            if (localPlayer.heldItem === 'coffee') {
+                localPlayer.heldItem = null;
+                spawnHeart(localPlayer.x + PLAYER_SIZE/2, localPlayer.y);
+            }
+            updateActionButtons();
+        };
+
+        function updateActionButtons() {
+            const btnInteract = document.getElementById('btn-interact');
+            const btnDrink = document.getElementById('btn-drink');
+            if (!btnInteract || !btnDrink) return;
+
+            if (nearestInteractable && !window.isWelcomeOpen && currentRoom) {
+                btnInteract.classList.remove('hidden');
+            } else {
+                btnInteract.classList.add('hidden');
+            }
+
+            if (localPlayer.heldItem === 'coffee' && !window.isWelcomeOpen && currentRoom) {
+                btnDrink.classList.remove('hidden');
+            } else {
+                btnDrink.classList.add('hidden');
+            }
+        }
+
+        function spawnHeart(x, y) {
+            particles.push({ x, y, life: 1.5 });
+        }
+
+        const INTERACTABLES = [
+            { id: 'machine', type: 'machine', x: 350, y: 30, w: 60, h: 80 },
+            { id: 'rug', type: 'rug', x: 150, y: 200, w: 500, h: 300 }
+        ];
+        const tables = [[250, 350], [550, 350], [400, 250], [400, 450]];
+        tables.forEach((t, i) => {
+            INTERACTABLES.push({ id: `chair_${i}_L`, type: 'chair', x: t[0] - 60, y: t[1] - 15, w: 30, h: 30 });
+            INTERACTABLES.push({ id: `chair_${i}_R`, type: 'chair', x: t[0] + 30, y: t[1] - 15, w: 30, h: 30 });
+        });
+
+        let nearestInteractable = null;
+        let particles = [];
 
         // Helper for rounded rectangles (if browser support is an issue, but ctx.roundRect is standard now)
         function drawCafeEnvironment() {
@@ -1000,6 +1128,40 @@
             ctx.fillStyle = '#b67d65'; // Counter top highlight
             ctx.fillRect(0, 80, CANVAS_WIDTH, 15);
 
+            // Retro Coffee Vending Machine
+            const mx = 350, my = 15;
+            // Left half (Yellow)
+            ctx.fillStyle = '#dcb464';
+            ctx.fillRect(mx, my, 30, 80);
+            // Right half (Brown)
+            ctx.fillStyle = '#5c4033';
+            ctx.fillRect(mx + 30, my, 30, 80);
+            
+            // Sign "COFFEE"
+            ctx.fillStyle = '#f5e4c3';
+            ctx.fillRect(mx + 5, my + 5, 50, 15);
+            ctx.fillStyle = '#2c272e';
+            ctx.font = '10px "VT323", monospace';
+            ctx.fillText("COFFEE", mx + 10, my + 15);
+
+            // Dispenser Area
+            ctx.fillStyle = '#3e2a22';
+            ctx.fillRect(mx + 8, my + 30, 14, 20);
+            ctx.fillStyle = '#fff'; // Tiny cup inside
+            ctx.fillRect(mx + 11, my + 42, 8, 8);
+
+            // Buttons / Keypad
+            ctx.fillStyle = '#2c272e';
+            ctx.fillRect(mx + 35, my + 30, 20, 20);
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(mx + 37, my + 32, 4, 4);
+            ctx.fillRect(mx + 43, my + 32, 4, 4);
+            ctx.fillRect(mx + 49, my + 32, 4, 4);
+            
+            // Bottom vent / details
+            ctx.fillStyle = '#2c272e';
+            ctx.fillRect(mx, my + 75, 60, 5);
+
             // Center Cozy Rug
             ctx.fillStyle = '#c47272';
             ctx.beginPath();
@@ -1017,10 +1179,23 @@
             ctx.strokeRect(154, 204, 492, 292);
             ctx.setLineDash([]);
 
-            // Coffee Tables
-            const tables = [[250, 350], [550, 350], [400, 250], [400, 450]];
+            // Coffee Tables & Chairs
             tables.forEach(t => {
-                // Shadow
+                // Chairs (Left and Right)
+                const drawChair = (cx, cy) => {
+                    // Shadow
+                    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                    ctx.beginPath(); ctx.arc(cx + 15, cy + 20, 15, 0, Math.PI*2); ctx.fill();
+                    // Cushion
+                    ctx.fillStyle = '#9e736a';
+                    ctx.fillRect(cx, cy, 30, 30);
+                    ctx.fillStyle = '#b8897f';
+                    ctx.fillRect(cx + 2, cy + 2, 26, 26);
+                };
+                drawChair(t[0] - 60, t[1] - 15); // Left Chair
+                drawChair(t[0] + 30, t[1] - 15); // Right Chair
+
+                // Shadow for Table
                 ctx.fillStyle = 'rgba(0,0,0,0.2)';
                 ctx.beginPath(); ctx.arc(t[0], t[1] + 10, 40, 0, Math.PI*2); ctx.fill();
                 // Wood
@@ -1181,7 +1356,16 @@
                     }
 
                     const wobbleAngle = isMoving ? Math.sin(cs.animOffset) * 0.15 : 0;
-                    const bounceY = isMoving ? -Math.abs(Math.sin(cs.animOffset)) * 4 : idleBounceY;
+                    let bounceY = isMoving ? -Math.abs(Math.sin(cs.animOffset)) * 4 : idleBounceY;
+                    let bodyHeight = PLAYER_SIZE;
+
+                    const currentIsSitting = isMe ? localPlayer.isSitting : p.isSitting;
+                    if (currentIsSitting) {
+                        bounceY = 12; // Sitting down
+                        scaleY = 0.8; // Squatting
+                        scaleX = 1.1; // Squatting
+                        bodyHeight = PLAYER_SIZE - 4; // Hide legs slightly
+                    }
 
                     const color = isMe ? localPlayer.color : (p.color || '#ffb3ba');
                     const username = isMe ? localPlayer.username : (p.username || 'Guest');
@@ -1218,10 +1402,10 @@
                     ctx.fillStyle = color;
                     if(ctx.roundRect) {
                         ctx.beginPath();
-                        ctx.roundRect(drawX, bodyY, PLAYER_SIZE, PLAYER_SIZE, 6);
+                        ctx.roundRect(drawX, bodyY, PLAYER_SIZE, bodyHeight, 6);
                         ctx.fill();
                     } else {
-                        ctx.fillRect(drawX, bodyY, PLAYER_SIZE, PLAYER_SIZE);
+                        ctx.fillRect(drawX, bodyY, PLAYER_SIZE, bodyHeight);
                     }
                     
                     // Cute face (eyes and blush)
@@ -1260,14 +1444,41 @@
                         ctx.lineWidth = 2;
                         if(ctx.roundRect) {
                             ctx.beginPath();
-                            ctx.roundRect(drawX - 2, bodyY - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4, 8);
+                            ctx.roundRect(drawX - 2, bodyY - 2, PLAYER_SIZE + 4, bodyHeight + 4, 8);
                             ctx.stroke();
                         } else {
-                            ctx.strokeRect(drawX - 2, bodyY - 2, PLAYER_SIZE + 4, PLAYER_SIZE + 4);
+                            ctx.strokeRect(drawX - 2, bodyY - 2, PLAYER_SIZE + 4, bodyHeight + 4);
                         }
                     }
 
+                    const currentHeldItem = isMe ? localPlayer.heldItem : p.heldItem;
+                    if (currentHeldItem === 'coffee') {
+                        ctx.fillStyle = '#fff';
+                        const cupX = drawX + PLAYER_SIZE/2 + faceOffsetX * 2 - 5;
+                        const cupY = bodyY + 18;
+                        ctx.fillRect(cupX, cupY, 10, 12);
+                        ctx.fillStyle = '#3e2a22';
+                        ctx.fillRect(cupX + 2, cupY - 2, 6, 4);
+                        // Hand holding it
+                        ctx.fillStyle = color;
+                        ctx.fillRect(cupX - 2, cupY + 4, 4, 4);
+                    }
+
                     ctx.restore();
+
+                    // Floating interaction prompt for local player
+                    if (isMe && nearestInteractable && !window.isWelcomeOpen && currentRoom) {
+                        ctx.fillStyle = '#2c272e';
+                        ctx.font = '16px "VT323", monospace';
+                        const actionText = (nearestInteractable.type === 'machine') ? "[E] Coffee" : "[E] Sit";
+                        const promptW = ctx.measureText(actionText).width;
+                        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                        ctx.fillRect(drawX + PLAYER_SIZE/2 - promptW/2 - 4, drawY - 60, promptW + 8, 20);
+                        ctx.fillStyle = '#2c272e';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(actionText, drawX + PLAYER_SIZE/2, drawY - 45);
+                        ctx.textAlign = 'left';
+                    }
 
                     // Draw Chat Bubble (Visible for 6 seconds)
                     const msg = isMe ? localPlayer.msg : p.msg;
@@ -1293,6 +1504,18 @@
             ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
             drawCafeEnvironment();
             drawPlayers();
+
+            // Draw particles (hearts)
+            particles.forEach(p => {
+                ctx.fillStyle = '#ff6b6b';
+                ctx.globalAlpha = Math.max(0, p.life / 1.5);
+                ctx.fillRect(p.x - 2, p.y - 2, 2, 2);
+                ctx.fillRect(p.x + 2, p.y - 2, 2, 2);
+                ctx.fillRect(p.x - 4, p.y, 10, 2);
+                ctx.fillRect(p.x - 2, p.y + 2, 6, 2);
+                ctx.fillRect(p.x, p.y + 4, 2, 2);
+                ctx.globalAlpha = 1.0;
+            });
         }
 
         let lastFrameTime = 0;
@@ -1338,7 +1561,9 @@
                     username: localPlayer.username,
                     msg: localPlayer.msg || '',
                     msgTime: localPlayer.msgTime || 0,
-                    lastSeen: localPlayer.lastSeen
+                    lastSeen: localPlayer.lastSeen,
+                    isSitting: localPlayer.isSitting,
+                    heldItem: localPlayer.heldItem
                 }).then(() => {
                     // Calculate ping from round-trip using EMA (Exponential Moving Average)
                     const currentPing = Date.now() - localPlayer.lastSeen;
