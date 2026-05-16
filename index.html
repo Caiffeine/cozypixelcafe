@@ -54,7 +54,16 @@
         .cafe-btn:hover {
             background: #e8b19a;
         }
-        #btn-join-room:hover {
+        .cafe-btn.green {
+            background: #8fb3a0;
+            border-color: #6b8c7a;
+            box-shadow: 0 4px 0 #506e5e;
+            color: #1c181f;
+        }
+        .cafe-btn.green:active {
+            box-shadow: 0 0 0 #506e5e;
+        }
+        .cafe-btn.green:hover {
             background: #a4c3b2;
         }
 
@@ -158,7 +167,7 @@
                     <p class="text-white"><strong class="text-[#8fb3a0]">Mobile:</strong> Use the joystick to move. Tap the chat icon to talk.</p>
                 </div>
             </div>
-            <button onclick="closeWelcomeDialog()" class="cafe-btn px-6 py-2 text-xl w-full bg-[#8fb3a0] text-[#1c181f] border-4 border-[#6b8c7a] shadow-[0_4px_0_#506e5e]">I'm Ready!</button>
+            <button onclick="closeWelcomeDialog()" class="cafe-btn green px-6 py-2 text-xl w-full">I'm Ready!</button>
         </div>
     </div>
 
@@ -193,7 +202,7 @@
 
                 <div class="w-full flex flex-col space-y-2 md:space-y-3">
                     <input type="text" id="join-code" placeholder="Enter 4-letter code" maxlength="4" class="cafe-input w-full p-2 md:p-3 text-center text-xl md:text-2xl uppercase">
-                    <button id="btn-join-room" onclick="joinRoomFromInput()" class="cafe-btn w-full py-2 md:py-3 text-lg md:text-xl bg-[#8fb3a0] border-[#6b8c7a] shadow-[0_4px_0_#506e5e]">Join Friends</button>
+                    <button id="btn-join-room" onclick="joinRoomFromInput()" class="cafe-btn green w-full py-2 md:py-3 text-lg md:text-xl">Join Friends</button>
                 </div>
             </div>
         </div>
@@ -926,8 +935,11 @@
                 }
             }
 
+            if (dy < 0) localPlayer.facingDir = 'up';
+            else if (dy > 0) localPlayer.facingDir = 'down';
+            
             if (dx < 0) localPlayer.facingDir = 'left';
-            if (dx > 0) localPlayer.facingDir = 'right';
+            else if (dx > 0) localPlayer.facingDir = 'right';
 
             localPlayer.x += dx;
             localPlayer.y += dy;
@@ -1205,17 +1217,33 @@
                     
                     // Cute face (eyes and blush)
                     let faceOffsetX = 0;
+                    let hideFace = false;
                     const currentFacingDir = isMe ? localPlayer.facingDir : (p.facingDir || 'right');
-                    if (currentFacingDir === 'left') faceOffsetX = -6;
-                    if (currentFacingDir === 'right') faceOffsetX = 6;
-
-                    ctx.fillStyle = '#2c272e'; // Eyes
-                    ctx.fillRect(drawX + 8 + faceOffsetX, bodyY + 12, 4, 6);
-                    ctx.fillRect(drawX + PLAYER_SIZE - 12 + faceOffsetX, bodyY + 12, 4, 6);
                     
-                    ctx.fillStyle = 'rgba(255,100,100,0.4)'; // Blush
-                    ctx.fillRect(drawX + 4 + faceOffsetX, bodyY + 18, 6, 4);
-                    ctx.fillRect(drawX + PLAYER_SIZE - 10 + faceOffsetX, bodyY + 18, 6, 4);
+                    if (currentFacingDir === 'left') faceOffsetX = -6;
+                    else if (currentFacingDir === 'right') faceOffsetX = 6;
+                    else if (currentFacingDir === 'up') hideFace = true;
+
+                    if (!hideFace) {
+                        // Blinking logic
+                        const uidStr = isMe ? currentUser.uid : uid;
+                        const blinkOffset = uidStr.charCodeAt(0) * 100 || 0;
+                        const blinkCycle = (now + blinkOffset) % 4000;
+                        const isBlinking = blinkCycle < 150; // Eyes closed for 150ms every 4s
+
+                        ctx.fillStyle = '#2c272e'; // Eyes
+                        if (isBlinking) {
+                            ctx.fillRect(drawX + 8 + faceOffsetX, bodyY + 14, 4, 2);
+                            ctx.fillRect(drawX + PLAYER_SIZE - 12 + faceOffsetX, bodyY + 14, 4, 2);
+                        } else {
+                            ctx.fillRect(drawX + 8 + faceOffsetX, bodyY + 12, 4, 6);
+                            ctx.fillRect(drawX + PLAYER_SIZE - 12 + faceOffsetX, bodyY + 12, 4, 6);
+                        }
+                        
+                        ctx.fillStyle = 'rgba(255,100,100,0.4)'; // Blush
+                        ctx.fillRect(drawX + 4 + faceOffsetX, bodyY + 18, 6, 4);
+                        ctx.fillRect(drawX + PLAYER_SIZE - 10 + faceOffsetX, bodyY + 18, 6, 4);
+                    }
 
                     // Highlight self outline
                     if (isMe) {
